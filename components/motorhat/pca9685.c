@@ -57,6 +57,7 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
     return ret;
   }
 
+  // Reset the chip
   ret = pca9685_write_register(handle, PCA9685_MODE1, 0x00);
   if (ret != ESP_OK) {
     return ret;
@@ -79,25 +80,29 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
     return ret;
   }
 
-  uint8_t newmode = (oldmode & 0x7F) | 0x10; // sleep
+  uint8_t newmode = (oldmode & ~PCA9685_MODE1_RESTART) | PCA9685_MODE1_SLEEP;
   ret = pca9685_write_register(handle, PCA9685_MODE1, newmode);
   if (ret != ESP_OK) {
     return ret;
   }
 
+  // Set the prescale
   ret = pca9685_write_register(handle, PCA9685_PRE_SCALE, prescale);
   if (ret != ESP_OK) {
     return ret;
   }
 
+  // Wake up the device
   ret = pca9685_write_register(handle, PCA9685_MODE1, oldmode);
   if (ret != ESP_OK) {
     return ret;
   }
+
+  // Wait for oscillator to stabilize
   vTaskDelay(pdMS_TO_TICKS(5));
 
   // Enable auto increment
-  ret = pca9685_write_register(handle, PCA9685_MODE1, oldmode | 0xA0);
+  ret = pca9685_write_register(handle, PCA9685_MODE1, oldmode | PCA9685_MODE1_RESTART | PCA9685_MODE1_AI);
   if (ret != ESP_OK) {
     return ret;
   }
@@ -106,24 +111,24 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
 }
 
 esp_err_t pca9685_set_duty_cycle(pca9685_handle_t *handle,
-                                 pca9685_channel_t channel, float duty_cycle) {
+                                 pca9685_channel_t channel, uint16_t duty_cycle) {
   if (handle == NULL || channel < PCA9685_CHANNEL0 ||
       channel > PCA9685_CHANNEL15) {
     return ESP_ERR_INVALID_ARG;
   }
 
-  if (duty_cycle < 0.0f || duty_cycle > 1.0f) {
+  if (duty_cycle > PCA9685_PWM_MAX) {
     return ESP_ERR_INVALID_ARG;
   }
 
   uint16_t on = 0;
-  uint16_t off = (uint16_t)(duty_cycle * PCA9685_PWM_MAX);
+  uint16_t off = (uint16_t)(duty_cycle);
 
   // Handle special cases for full on and full off
-  if (duty_cycle == 1.0f) {
+  if (duty_cycle == PCA9685_PWM_MAX) {
     on = PCA9685_PWM_MAX;
     off = 0;
-  } else if (duty_cycle == 0.0f) {
+  } else if (duty_cycle == 0) {
     on = 0;
     off = PCA9685_PWM_MAX;
   }
