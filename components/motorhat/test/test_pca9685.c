@@ -1,23 +1,33 @@
+#include "driver/i2c_master.h"
 #include "i2c_bus.h"
 #include "pca9685.h"
 #include "unity.h"
 
-TEST_CASE("PCA9685 Initialization Test", "[pca9685]") {
-  i2c_bus_t bus;
+static i2c_bus_t bus_handle;
+
+// Runs BEFORE each test
+void setUp(void) {
   i2c_bus_config_t bus_config = {
       .port = I2C_NUM_0,
       .sda_io_num = CONFIG_PCA9685_TEST_SDA_PIN,
       .scl_io_num = CONFIG_PCA9685_TEST_SCL_PIN,
   };
+  ESP_ERROR_CHECK(i2c_bus_init(&bus_handle, &bus_config));
+}
 
-  ESP_ERROR_CHECK(i2c_bus_init(&bus, &bus_config));
+// Runs AFTER each test
+void tearDown(void) {
+  // Cleanup here
+  i2c_del_master_bus(bus_handle.handle);
+}
 
+TEST_CASE("PCA9685 Initialization Test", "[pca9685]") {
   pca9685_handle_t handle;
   pca9685_config_t config = {
-      .i2c_addr = CONFIG_PCA9685_TEST_ADDRESS,
+      .i2c_addr = CONFIG_PCA9685_TEST_ADDR,
       .i2c_speed_hz = 400000,
       .pwm_freq_hz = 1000,
-      .bus_handle = bus.handle,
+      .bus_handle = bus_handle.handle,
   };
 
   esp_err_t err = pca9685_init(&handle, &config);
@@ -26,21 +36,13 @@ TEST_CASE("PCA9685 Initialization Test", "[pca9685]") {
 }
 
 TEST_CASE("PCA9685 Wrong Address Test", "[pca9685]") {
-  i2c_bus_t bus;
-  i2c_bus_config_t bus_config = {
-      .port = I2C_NUM_0,
-      .sda_io_num = CONFIG_PCA9685_TEST_SDA_PIN,
-      .scl_io_num = CONFIG_PCA9685_TEST_SCL_PIN,
-  };
-
-  ESP_ERROR_CHECK(i2c_bus_init(&bus, &bus_config));
 
   pca9685_handle_t handle;
   pca9685_config_t config = {
       .i2c_addr = 0x00, // Invalid address
       .i2c_speed_hz = 400000,
       .pwm_freq_hz = 1000,
-      .bus_handle = bus.handle,
+      .bus_handle = bus_handle.handle,
   };
 
   esp_err_t err = pca9685_init(&handle, &config);
@@ -48,21 +50,12 @@ TEST_CASE("PCA9685 Wrong Address Test", "[pca9685]") {
 }
 
 TEST_CASE("PCA9685 Set Duty Cycle Test", "[pca9685]") {
-  i2c_bus_t bus;
-  i2c_bus_config_t bus_config = {
-      .port = I2C_NUM_0,
-      .sda_io_num = CONFIG_PCA9685_TEST_SDA_PIN,
-      .scl_io_num = CONFIG_PCA9685_TEST_SCL_PIN,
-  };
-
-  ESP_ERROR_CHECK(i2c_bus_init(&bus, &bus_config));
-
   pca9685_handle_t handle;
   pca9685_config_t config = {
-      .i2c_addr = CONFIG_PCA9685_TEST_ADDRESS,
+      .i2c_addr = CONFIG_PCA9685_TEST_ADDR,
       .i2c_speed_hz = 400000,
       .pwm_freq_hz = 1000,
-      .bus_handle = bus.handle,
+      .bus_handle = bus_handle.handle,
   };
 
   ESP_ERROR_CHECK(pca9685_init(&handle, &config));
@@ -85,21 +78,12 @@ TEST_CASE("PCA9685 Set Duty Cycle Test", "[pca9685]") {
 }
 
 TEST_CASE("PCA9685 Digital Write Test", "[pca9685]") {
-  i2c_bus_t bus;
-  i2c_bus_config_t bus_config = {
-      .port = I2C_NUM_0,
-      .sda_io_num = CONFIG_PCA9685_TEST_SDA_PIN,
-      .scl_io_num = CONFIG_PCA9685_TEST_SCL_PIN,
-  };
-
-  ESP_ERROR_CHECK(i2c_bus_init(&bus, &bus_config));
-
   pca9685_handle_t handle;
   pca9685_config_t config = {
-      .i2c_addr = CONFIG_PCA9685_TEST_ADDRESS,
+      .i2c_addr = CONFIG_PCA9685_TEST_ADDR,
       .i2c_speed_hz = 400000,
       .pwm_freq_hz = 1000,
-      .bus_handle = bus.handle,
+      .bus_handle = bus_handle.handle,
   };
 
   ESP_ERROR_CHECK(pca9685_init(&handle, &config));

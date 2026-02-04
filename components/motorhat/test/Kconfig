@@ -8,7 +8,7 @@ menu "PCA9685 Configuration"
         int "Test I2C SCL GPIO"
         default 22
 
-    config PCA9685_TEST_I2C_ADDR
+    config PCA9685_TEST_ADDR
         hex "Test I2C address"
         default 0x40
 
