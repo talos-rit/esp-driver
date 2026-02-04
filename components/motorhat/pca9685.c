@@ -94,7 +94,7 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
   if (ret != ESP_OK) {
     return ret;
   }
-  vTaskDelay(5 / portTICK_PERIOD_MS);
+  vTaskDelay(pdMS_TO_TICKS(5));
 
   // Enable auto increment
   ret = pca9685_write_register(handle, PCA9685_MODE1, oldmode | 0xA0);
