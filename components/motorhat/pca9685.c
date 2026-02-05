@@ -163,6 +163,25 @@ esp_err_t pca9685_write_channel_registers(pca9685_handle_t *handle,
 
   pca9685_channel_registers_t regs = channel_regs[channel];
 
+
+  // The PCA9685 uses 12-bit PWM values for each channel (0–4095).
+  // These 12 bits are split across two 8-bit registers:
+  //   LEDn_ON_L  -> bits  7..0  (low byte)
+  //   LEDn_ON_H  -> bits 11..8  (lower 4 bits of the high byte; upper 4 bits
+  //   are control flags)
+  // Same layout applies for OFF_L / OFF_H.
+  //
+  // Therefore:
+  //   - (value & 0xFF) extracts the lower 8 data bits for the *_L register.
+  //   - ((value >> 8) & 0x1F) extracts only the upper 5 PWM bits for the *_H
+  //   register,
+  //   Bit 4 is used to set the full ON/OFF flags, so we mask with 0x1F
+  //
+  // 0xFF = 1111 1111b  -> mask for low byte
+  // 0x0F = 0000 1111b  -> mask for PWM bits 11..8 in high byte
+  //
+  //
+
   uint8_t write_buf[5];
   write_buf[0] = regs.on_low;
   write_buf[1] = on & 0xFF;
