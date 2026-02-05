@@ -276,7 +276,6 @@ esp_err_t pca9685_write_channel_registers(pca9685_handle_t *handle,
  * @param[in] handle Pointer to PCA9685 handle
  * @param[in] reg Starting register address to read from
  * @param[out] data Pointer to buffer to store read data
- * @param[in] len Number of bytes to read
  *
  * @return
  *    - ESP_OK: Success
@@ -284,8 +283,7 @@ esp_err_t pca9685_write_channel_registers(pca9685_handle_t *handle,
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
 esp_err_t pca9685_read_register(pca9685_handle_t *handle,
-                                pca9685_register_t reg, uint8_t *data,
-                                size_t len);
+                                pca9685_register_t reg, uint8_t *data);
 
 /**
  * @brief Write a single byte to a PCA9685 register

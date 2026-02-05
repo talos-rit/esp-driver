@@ -71,7 +71,7 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
   uint8_t prescale = PCA9685_CALC_PRE_SCALE(config->pwm_freq_hz);
 
   uint8_t oldmode;
-  ret = pca9685_read_register(handle, PCA9685_MODE1, &oldmode, 1);
+  ret = pca9685_read_register(handle, PCA9685_MODE1, &oldmode);
   if (ret != ESP_OK) {
     return ret;
   }
@@ -175,14 +175,13 @@ esp_err_t pca9685_write_channel_registers(pca9685_handle_t *handle,
 }
 
 esp_err_t pca9685_read_register(pca9685_handle_t *handle,
-                                pca9685_register_t reg, uint8_t *data,
-                                size_t len) {
+                                pca9685_register_t reg, uint8_t *data) {
   if (handle == NULL || data == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
 
   return i2c_master_transmit_receive(handle->dev_handle, (uint8_t *)&reg, 1,
-                                     data, len, PCA9685_I2C_MASTER_TIMEOUT_MS);
+                                     data, 1, PCA9685_I2C_MASTER_TIMEOUT_MS);
 }
 
 esp_err_t pca9685_write_register(pca9685_handle_t *handle,
