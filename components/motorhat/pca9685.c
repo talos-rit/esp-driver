@@ -63,16 +63,12 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
     return ret;
   }
 
-  if (config->pwm_freq_hz < 24.0f || config->pwm_freq_hz > 1526.0f) {
+  if (config->pwm_freq_hz < PCA9685_MIN_PWM_FREQ_HZ ||
+      config->pwm_freq_hz > PCA9685_MAX_PWM_FREQ_HZ) {
     return ESP_ERR_INVALID_ARG;
   }
 
-  float prescaleval = 25000000.0f; // 25MHz
-  prescaleval /= 4096.0f;          // 12-bit
-  prescaleval /= config->pwm_freq_hz;
-  prescaleval -= 1.0f;
-
-  uint8_t prescale = (uint8_t)(prescaleval + 0.5f);
+  uint8_t prescale = PCA9685_CALC_PRE_SCALE(config->pwm_freq_hz);
 
   uint8_t oldmode;
   ret = pca9685_read_register(handle, PCA9685_MODE1, &oldmode, 1);
@@ -102,7 +98,9 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
   vTaskDelay(pdMS_TO_TICKS(5));
 
   // Enable auto increment
-  ret = pca9685_write_register(handle, PCA9685_MODE1, oldmode | PCA9685_MODE1_RESTART | PCA9685_MODE1_AI);
+  ret = pca9685_write_register(handle, PCA9685_MODE1,
+                               oldmode | PCA9685_MODE1_RESTART |
+                                   PCA9685_MODE1_AI);
   if (ret != ESP_OK) {
     return ret;
   }
@@ -111,7 +109,8 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
 }
 
 esp_err_t pca9685_set_duty_cycle(pca9685_handle_t *handle,
-                                 pca9685_channel_t channel, uint16_t duty_cycle) {
+                                 pca9685_channel_t channel,
+                                 uint16_t duty_cycle) {
   if (handle == NULL || channel < PCA9685_CHANNEL0 ||
       channel > PCA9685_CHANNEL15) {
     return ESP_ERR_INVALID_ARG;
@@ -182,9 +181,7 @@ esp_err_t pca9685_read_register(pca9685_handle_t *handle,
     return ESP_ERR_INVALID_ARG;
   }
 
-  uint8_t reg_buf[1] = {reg};
-
-  return i2c_master_transmit_receive(handle->dev_handle, reg_buf, sizeof(reg),
+  return i2c_master_transmit_receive(handle->dev_handle, (uint8_t *)&reg, 1,
                                      data, len, PCA9685_I2C_MASTER_TIMEOUT_MS);
 }
 

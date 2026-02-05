@@ -8,6 +8,18 @@
 #define PCA9685_PWM_MAX 4096
 #define PCA9685_I2C_MASTER_TIMEOUT_MS 1000
 
+// 25 MHz internal oscillator frequency
+#define PCA9685_OSCILLATOR_FREQ_HZ 25000000
+#define PCA9685_MIN_PWM_FREQ_HZ 24.0f
+#define PCA9685_MAX_PWM_FREQ_HZ 1526.0f
+
+// Calculate pre-scale value for a desired PWM frequency
+// See PCA9685 datasheet section 7.3.5
+// The + 0.5f is for rounding to nearest integer without truncation
+#define PCA9685_CALC_PRE_SCALE(freq_hz)                                        \
+  ((uint8_t)((PCA9685_OSCILLATOR_FREQ_HZ / (4096.0f * (freq_hz))) - 1.0f +     \
+             0.5f))
+
 /**
  * @brief PCA9685 register addresses
  */
@@ -164,17 +176,17 @@ typedef struct {
  * @brief PCA9685 configuration structure
  */
 typedef struct {
-  uint8_t i2c_addr;                    /**< I2C device address (typically 0x40-0x7F) */
-  uint32_t i2c_speed_hz;               /**< I2C bus speed in Hz */
-  float pwm_freq_hz;                   /**< PWM frequency in Hz (24-1526 Hz) */
-  i2c_master_bus_handle_t bus_handle;  /**< I2C master bus handle */
+  uint8_t i2c_addr;      /**< I2C device address (typically 0x40-0x7F) */
+  uint32_t i2c_speed_hz; /**< I2C bus speed in Hz */
+  float pwm_freq_hz;     /**< PWM frequency in Hz (24-1526 Hz) */
+  i2c_master_bus_handle_t bus_handle; /**< I2C master bus handle */
 } pca9685_config_t;
 
 /**
  * @brief PCA9685 device handle
  */
 typedef struct {
-  i2c_master_dev_handle_t dev_handle;  /**< I2C device handle */
+  i2c_master_dev_handle_t dev_handle; /**< I2C device handle */
 } pca9685_handle_t;
 
 /**
@@ -188,7 +200,8 @@ typedef struct {
  *
  * @return
  *    - ESP_OK: Success
- *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer or invalid frequency)
+ *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer or invalid
+ * frequency)
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
 esp_err_t pca9685_init(pca9685_handle_t *handle,
@@ -208,11 +221,13 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
  *
  * @return
  *    - ESP_OK: Success
- *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL handle, invalid channel, or duty cycle > 4096)
+ *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL handle, invalid channel, or
+ * duty cycle > 4096)
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
 esp_err_t pca9685_set_duty_cycle(pca9685_handle_t *handle,
-                                 pca9685_channel_t channel, uint16_t duty_cycle);
+                                 pca9685_channel_t channel,
+                                 uint16_t duty_cycle);
 
 /**
  * @brief Set digital output state for a channel
@@ -235,9 +250,10 @@ esp_err_t pca9685_digital_write(pca9685_handle_t *handle,
 /**
  * @brief Write ON and OFF register values for a channel
  *
- * Low-level function to directly set the ON and OFF counter values for a channel.
- * This allows precise control of when the output turns on and off within the
- * PWM cycle (0-4095). For most applications, use pca9685_set_duty_cycle() instead.
+ * Low-level function to directly set the ON and OFF counter values for a
+ * channel. This allows precise control of when the output turns on and off
+ * within the PWM cycle (0-4095). For most applications, use
+ * pca9685_set_duty_cycle() instead.
  *
  * @param[in] handle Pointer to PCA9685 handle
  * @param[in] channel Channel number (0-15)
@@ -246,7 +262,8 @@ esp_err_t pca9685_digital_write(pca9685_handle_t *handle,
  *
  * @return
  *    - ESP_OK: Success
- *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL handle, invalid channel, or values > 4096)
+ *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL handle, invalid channel, or
+ * values > 4096)
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
 esp_err_t pca9685_write_channel_registers(pca9685_handle_t *handle,
