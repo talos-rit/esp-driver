@@ -4,7 +4,7 @@
 #include "pca9685.h"
 #include <stdint.h>
 
-static const float DEFAULT_FREQUENCY_HZ = 1526.0f;
+#define DEFAULT_FREQUENCY_HZ 1526.0f
 
 typedef enum {
   MOTORHAT_MOTOR1 = 0,
