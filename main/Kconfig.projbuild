@@ -23,4 +23,16 @@ menu "Talos ESP Driver Configuration"
 		help
 		  I2C address for the MotorHAT device.
 
+        config WIFI_SSID
+		string "WiFi SSID"
+		default "YourSSID"
+		help
+		  SSID of the WiFi network to connect to.
+	
+	config WIFI_PASSWORD
+		string "WiFi Password"
+		default "YourPassword"
+		help
+		  Password for the WiFi network.
+
 endmenu
