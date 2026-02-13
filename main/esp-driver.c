@@ -17,14 +17,18 @@ void app_main(void) {
       .scl_io_num = CONFIG_MOTORHAT_SCL_PIN,
   };
   ESP_ERROR_CHECK(i2c_bus_init(&bus, &bus_config));
-  ESP_ERROR_CHECK(i2cdev_init()); // i2c dev library needed by ads111x
+  ESP_ERROR_CHECK(i2cdev_init());
 
-  ads1015_handle_t *ads = ads1015_create();
+  ads1015_handle_t ads;
   ads1015_config_t ads_config = {
       .alert_gpio = GPIO_NUM_NC,
+      .i2c_port = I2C_NUM_0,
+      .i2c_addr = ADS111X_ADDR_GND,
+      .sda_io_num = CONFIG_MOTORHAT_SDA_PIN,
+      .scl_io_num = CONFIG_MOTORHAT_SCL_PIN,
   };
 
-  if (ads1015_init(ads, &ads_config) == ESP_OK) {
+  if (ads1015_init(&ads, &ads_config) == ESP_OK) {
     ESP_LOGI(TAG, "ADS1015 driver started successfully");
   } else {
     ESP_LOGE(TAG, "Failed to start ADS1015 driver");

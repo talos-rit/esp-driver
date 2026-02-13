@@ -7,29 +7,26 @@
 #include "freertos/semphr.h"
 #include "esp_log.h"
 
-#define ADS1015_I2C_ADDR ADS111X_ADDR_GND   // 0x48
-#define ADS1015_I2C_PORT I2C_NUM_0
-
-struct ads1015_handle_t {
-    i2c_dev_t dev;
-    gpio_num_t alert_gpio;
-    SemaphoreHandle_t rdy_sem;
-};
+#define TAG "ADS1015"
 
 esp_err_t ads1015_init(ads1015_handle_t *ads, const ads1015_config_t *config)
 {
+    ESP_LOGI(TAG, "Initializing ADS1015...");
+
     if (!ads || !config) {
         return ESP_ERR_INVALID_ARG;
     }
+
+    memset(&ads->dev, 0, sizeof(i2c_dev_t)); // Clear device structure before repopulating
 
     ads->alert_gpio = config->alert_gpio; 
 
     ESP_ERROR_CHECK(ads111x_init_desc(
         &ads->dev,
-        ADS1015_I2C_ADDR,
-        ADS1015_I2C_PORT,
-        GPIO_NUM_21,
-        GPIO_NUM_22
+        config->i2c_addr,
+        config->i2c_port,
+        config->sda_io_num,
+        config->scl_io_num
     ));
 
     ESP_ERROR_CHECK(ads111x_set_mode(&ads->dev, ADS111X_MODE_CONTINUOUS));
