@@ -43,6 +43,12 @@ static void event_handler(void *arg, esp_event_base_t event_base,
 
 esp_err_t wifi_init(driver_wifi_config_t *config) {
 
+  s_wifi_event_group = xEventGroupCreate();
+  if (s_wifi_event_group == NULL) {
+    ESP_LOGE(TAG, "Unable to create wifi event group");
+    return ESP_ERR_NO_MEM;
+  }
+
   ESP_ERROR_CHECK(esp_netif_init());
 
   ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -68,18 +74,18 @@ esp_err_t wifi_init(driver_wifi_config_t *config) {
                * the password with length and format matching to
                * WIFI_AUTH_WEP/WIFI_AUTH_WPA_PSK standards.
                */
-              .threshold.authmode = WIFI_AUTH_WPA2_PSK,
+              .threshold.authmode = WIFI_AUTH_WPA2_WPA3_PSK,
               .sae_pwe_h2e = WPA3_SAE_PWE_HUNT_AND_PECK,
               .sae_h2e_identifier = "",
           },
   };
 
+  memcpy(wifi_config.sta.ssid, config->ssid, sizeof(config->ssid));
+  memcpy(wifi_config.sta.password, config->password, sizeof(config->password));
+
   ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
   ESP_ERROR_CHECK(esp_wifi_start());
-
-  memcpy(wifi_config.sta.ssid, config->ssid, sizeof(config->ssid));
-  memcpy(wifi_config.sta.password, config->password, sizeof(config->password));
 
   return ESP_OK;
 }
