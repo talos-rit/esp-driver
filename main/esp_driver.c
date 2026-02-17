@@ -30,7 +30,7 @@ void app_main(void) {
                                MOTORHAT_DIRECTION_FORWARD);
   motorhat_set_motor_speed(&motorhat, MOTORHAT_MOTOR1, 200);
 
-  vTaskDelay(10000 / portTICK_PERIOD_MS);
+  vTaskDelay(1000 / portTICK_PERIOD_MS);
   motorhat_set_motor_speed(&motorhat, MOTORHAT_MOTOR1,
                            MOTORHAT_DIRECTION_RELEASE);
 }

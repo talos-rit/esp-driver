@@ -57,47 +57,50 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
     return ret;
   }
 
+  // Reset the chip
   ret = pca9685_write_register(handle, PCA9685_MODE1, 0x00);
   if (ret != ESP_OK) {
     return ret;
   }
 
-  if (config->pwm_freq_hz < 24.0f || config->pwm_freq_hz > 1526.0f) {
+  if (config->pwm_freq_hz < PCA9685_MIN_PWM_FREQ_HZ ||
+      config->pwm_freq_hz > PCA9685_MAX_PWM_FREQ_HZ) {
     return ESP_ERR_INVALID_ARG;
   }
 
-  float prescaleval = 25000000.0f; // 25MHz
-  prescaleval /= 4096.0f;          // 12-bit
-  prescaleval /= config->pwm_freq_hz;
-  prescaleval -= 1.0f;
-
-  uint8_t prescale = (uint8_t)(prescaleval + 0.5f);
+  uint8_t prescale = PCA9685_CALC_PRE_SCALE(config->pwm_freq_hz);
 
   uint8_t oldmode;
-  ret = pca9685_read_register(handle, PCA9685_MODE1, &oldmode, 1);
+  ret = pca9685_read_register(handle, PCA9685_MODE1, &oldmode);
   if (ret != ESP_OK) {
     return ret;
   }
 
-  uint8_t newmode = (oldmode & 0x7F) | 0x10; // sleep
+  uint8_t newmode = (oldmode & ~PCA9685_MODE1_RESTART) | PCA9685_MODE1_SLEEP;
   ret = pca9685_write_register(handle, PCA9685_MODE1, newmode);
   if (ret != ESP_OK) {
     return ret;
   }
 
+  // Set the prescale
   ret = pca9685_write_register(handle, PCA9685_PRE_SCALE, prescale);
   if (ret != ESP_OK) {
     return ret;
   }
 
+  // Wake up the device
   ret = pca9685_write_register(handle, PCA9685_MODE1, oldmode);
   if (ret != ESP_OK) {
     return ret;
   }
-  vTaskDelay(5 / portTICK_PERIOD_MS);
+
+  // Wait for oscillator to stabilize
+  vTaskDelay(pdMS_TO_TICKS(5));
 
   // Enable auto increment
-  ret = pca9685_write_register(handle, PCA9685_MODE1, oldmode | 0xA0);
+  ret = pca9685_write_register(handle, PCA9685_MODE1,
+                               oldmode | PCA9685_MODE1_RESTART |
+                                   PCA9685_MODE1_AI);
   if (ret != ESP_OK) {
     return ret;
   }
@@ -106,24 +109,25 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
 }
 
 esp_err_t pca9685_set_duty_cycle(pca9685_handle_t *handle,
-                                 pca9685_channel_t channel, float duty_cycle) {
+                                 pca9685_channel_t channel,
+                                 uint16_t duty_cycle) {
   if (handle == NULL || channel < PCA9685_CHANNEL0 ||
       channel > PCA9685_CHANNEL15) {
     return ESP_ERR_INVALID_ARG;
   }
 
-  if (duty_cycle < 0.0f || duty_cycle > 1.0f) {
+  if (duty_cycle > PCA9685_PWM_MAX) {
     return ESP_ERR_INVALID_ARG;
   }
 
   uint16_t on = 0;
-  uint16_t off = (uint16_t)(duty_cycle * PCA9685_PWM_MAX);
+  uint16_t off = (uint16_t)(duty_cycle);
 
   // Handle special cases for full on and full off
-  if (duty_cycle == 1.0f) {
+  if (duty_cycle == PCA9685_PWM_MAX) {
     on = PCA9685_PWM_MAX;
     off = 0;
-  } else if (duty_cycle == 0.0f) {
+  } else if (duty_cycle == 0) {
     on = 0;
     off = PCA9685_PWM_MAX;
   }
@@ -159,6 +163,25 @@ esp_err_t pca9685_write_channel_registers(pca9685_handle_t *handle,
 
   pca9685_channel_registers_t regs = channel_regs[channel];
 
+
+  // The PCA9685 uses 12-bit PWM values for each channel (0–4095).
+  // These 12 bits are split across two 8-bit registers:
+  //   LEDn_ON_L  -> bits  7..0  (low byte)
+  //   LEDn_ON_H  -> bits 11..8  (lower 4 bits of the high byte; upper 4 bits
+  //   are control flags)
+  // Same layout applies for OFF_L / OFF_H.
+  //
+  // Therefore:
+  //   - (value & 0xFF) extracts the lower 8 data bits for the *_L register.
+  //   - ((value >> 8) & 0x1F) extracts only the upper 5 PWM bits for the *_H
+  //   register,
+  //   Bit 4 is used to set the full ON/OFF flags, so we mask with 0x1F
+  //
+  // 0xFF = 1111 1111b  -> mask for low byte
+  // 0x0F = 0000 1111b  -> mask for PWM bits 11..8 in high byte
+  //
+  //
+
   uint8_t write_buf[5];
   write_buf[0] = regs.on_low;
   write_buf[1] = on & 0xFF;
@@ -171,16 +194,13 @@ esp_err_t pca9685_write_channel_registers(pca9685_handle_t *handle,
 }
 
 esp_err_t pca9685_read_register(pca9685_handle_t *handle,
-                                pca9685_register_t reg, uint8_t *data,
-                                size_t len) {
+                                pca9685_register_t reg, uint8_t *data) {
   if (handle == NULL || data == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
 
-  uint8_t reg_buf[1] = {reg};
-
-  return i2c_master_transmit_receive(handle->dev_handle, reg_buf, sizeof(reg),
-                                     data, len, PCA9685_I2C_MASTER_TIMEOUT_MS);
+  return i2c_master_transmit_receive(handle->dev_handle, (uint8_t *)&reg, 1,
+                                     data, 1, PCA9685_I2C_MASTER_TIMEOUT_MS);
 }
 
 esp_err_t pca9685_write_register(pca9685_handle_t *handle,
