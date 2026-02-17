@@ -6,3 +6,5 @@ sdkconfig.old
 .cache/
 .ccls-cache/
 managed_components/
+.DS_Store
+.vscode/settings.json
