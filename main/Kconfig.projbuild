@@ -23,4 +23,54 @@ menu "Talos ESP Driver Configuration"
 		help
 		  I2C address for the MotorHAT device.
 
+    # Motor 0
+    menu "Encoder Configuration"
+
+		config ENCODER_GLITCH_FILTER
+			int "Encoder Glitch Filter"
+			range 0 2147483647
+			default 1000
+			prompt "pulses shorter than this in nanoseconds are ignored"
+
+		menu "Encoder 0"
+			config ENCODER_0_P0_PIN
+				int "Encoder P0 GPIO Pin"
+				range 0 39
+				default 4
+			config ENCODER_0_P1_PIN
+				int "Encoder P1 GPIO Pin"
+				range 0 39
+				default 5
+			
+			config ENCODER_0_RESOLUTION
+				int "Encoder Resolution"
+				default 20
+				prompt "Number of slots in the encoder wheel" 
+			
+			config ENCODER_0_LIMB_GEAR_RATIO_X
+				int "Encoder Gear Ratio Numerator(X)"
+				range 1 2147483647
+				default 20
+				prompt "For every X rotations of the encoder wheel, the limb it controls rotates Y"
+			config ENCODER_0_LIMB_GEAR_RATIO_Y
+				int "Encoder Gear Ratio Denominator(Y)"
+				range 1 2147483647
+				default 1
+				prompt "For every X rotations of the encoder wheel, the limb it controls rotates Y"
+
+			config ENCODER_0_LIMB_REFERENCE
+				int "Encoder Limb End Stop Angle"
+				default 0
+				prompt "The angle of the limb at which the end stop is triggered"
+
+			config ENCODER_0_ANGLE_INVERT
+				bool "Encoder Angle Invert"
+				default False
+				prompt "Flip sign of angles and counts used with this encoder"
+		endmenu
+
+		
+    endmenu
+
+
 endmenu
