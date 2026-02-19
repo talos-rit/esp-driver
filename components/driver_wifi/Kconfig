@@ -1,12 +1,69 @@
 menu "Driver WiFi Configuration"
 
-    config DRIVER_WIFI_MAX_RETRIES
-        int "Maximum WiFi connection retries"
-        default 5
-        range 0 100
+    choice DRIVER_WIFI_SAE_PWE_MODE
+        prompt "WPA3 SAE PWE Mode"
+        default DRIVER_WIFI_SAE_PWE_BOTH
         help
-            Maximum number of times the WiFi driver will attempt to
-            reconnect to the configured access point before giving up.
-            Set to 0 for unlimited retries.
+            Select SAE Password Element (PWE) derivation method:
+            Hunt and Peck, Hash-to-Element (H2E), or both.
+
+        config DRIVER_WIFI_SAE_PWE_HUNT_AND_PECK
+            bool "Hunt and Peck"
+
+        config DRIVER_WIFI_SAE_PWE_H2E
+            bool "Hash-to-Element (H2E)"
+            depends on DRIVER_WIFI_ENABLE_SAE_H2E
+
+        config DRIVER_WIFI_SAE_PWE_BOTH
+            bool "Both"
+            depends on DRIVER_WIFI_ENABLE_SAE_H2E
+    endchoice
+
+
+    config DRIVER_WIFI_SAE_PASSWORD_IDENTIFIER
+        string "SAE Password Identifier"
+        depends on DRIVER_WIFI_SAE_PWE_H2E || DRIVER_WIFI_SAE_PWE_BOTH
+        default ""
+        help
+            Optional password identifier used for SAE H2E mode.
+
+
+    config DRIVER_WIFI_MAX_RETRY
+        int "Maximum Retry Count"
+        default 5
+        help
+            Maximum number of reconnection attempts before giving up.
+
+
+    choice DRIVER_WIFI_SCAN_AUTH_MODE
+        prompt "WiFi Scan Authentication Mode Threshold"
+        default DRIVER_WIFI_AUTH_WPA2_PSK
+        help
+            The weakest authentication mode accepted when scanning.
+
+        config DRIVER_WIFI_AUTH_OPEN
+            bool "OPEN"
+
+        config DRIVER_WIFI_AUTH_WEP
+            bool "WEP"
+
+        config DRIVER_WIFI_AUTH_WPA_PSK
+            bool "WPA PSK"
+
+        config DRIVER_WIFI_AUTH_WPA2_PSK
+            bool "WPA2 PSK"
+
+        config DRIVER_WIFI_AUTH_WPA_WPA2_PSK
+            bool "WPA/WPA2 PSK"
+
+        config DRIVER_WIFI_AUTH_WPA3_PSK
+            bool "WPA3 PSK"
+
+        config DRIVER_WIFI_AUTH_WPA2_WPA3_PSK
+            bool "WPA2/WPA3 PSK"
+
+        config DRIVER_WIFI_AUTH_WAPI_PSK
+            bool "WAPI PSK"
+    endchoice
 
 endmenu

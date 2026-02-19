@@ -3,6 +3,8 @@
 #include "esp_log.h"
 #include "netdb.h"
 #include "sys/socket.h"
+#include "driver_socket_api.h"
+#include "endian.h"
 
 #define TAG "driver_socket"
 #define INVALID_SOCK -1
@@ -19,7 +21,7 @@
 #define YIELD_TO_ALL_MS 50
 
 void driver_socket_task(void *arg) {
-  static char rx_buffer[128];
+  static uint8_t rx_buffer[128];
   task_args_t *task_args = (task_args_t *)arg;
   SemaphoreHandle_t *server_ready = &task_args->server_ready;
   struct addrinfo hints = {.ai_socktype = SOCK_STREAM};
@@ -145,11 +147,12 @@ void driver_socket_task(void *arg) {
           close(sock[i]);
           sock[i] = INVALID_SOCK;
         } else if (len > 0) {
-          // Received some data -> echo back
-          // TODO: Process data
+          driver_socket_api_process(rx_buffer, len);
           ESP_LOGI(TAG, "[sock=%d]: Received %.*s", sock[i], len, rx_buffer);
 
-          len = socket_send(TAG, sock[i], rx_buffer, len);
+          uint8_t response[] = "Message Received";
+
+          len = socket_send(TAG, sock[i], response, sizeof(response));
           if (len < 0) {
             // Error occurred on write to this socket -> close it and mark
             // invalid
@@ -244,7 +247,7 @@ char *get_clients_address(struct sockaddr_storage *source_addr) {
   return address_str;
 }
 
-int try_receive(const char *tag, const int sock, char *data,
+int try_receive(const char *tag, const int sock, uint8_t *data,
                        size_t max_len) {
   int len = recv(sock, data, max_len, 0);
   if (len < 0) {
@@ -262,7 +265,7 @@ int try_receive(const char *tag, const int sock, char *data,
   return len;
 }
 
-int socket_send(const char *tag, const int sock, const char * data, const size_t len)
+int socket_send(const char *tag, const int sock, const uint8_t * data, const size_t len)
 {
     int to_write = len;
     while (to_write > 0) {

@@ -4,6 +4,60 @@
 #include "esp_wifi.h"
 #include "esp_wifi_types_generic.h"
 #include "freertos/FreeRTOS.h"
+#include "sdkconfig.h"
+
+/* =========================
+ * SAE PWE Mode Selection
+ * ========================= */
+
+#if CONFIG_DRIVER_WIFI_SAE_PWE_HUNT_AND_PECK
+
+#define DRIVER_WIFI_SAE_MODE WPA3_SAE_PWE_HUNT_AND_PECK
+#define DRIVER_WIFI_SAE_PASSWORD_IDENTIFIER ""
+
+#elif CONFIG_DRIVER_WIFI_SAE_PWE_H2E
+
+#define DRIVER_WIFI_SAE_MODE WPA3_SAE_PWE_HASH_TO_ELEMENT
+#define DRIVER_WIFI_SAE_PASSWORD_IDENTIFIER                                    \
+  CONFIG_DRIVER_WIFI_SAE_PASSWORD_IDENTIFIER
+
+#elif CONFIG_DRIVER_WIFI_SAE_PWE_BOTH
+
+#define DRIVER_WIFI_SAE_MODE WPA3_SAE_PWE_BOTH
+#define DRIVER_WIFI_SAE_PASSWORD_IDENTIFIER                                    \
+  CONFIG_DRIVER_WIFI_SAE_PASSWORD_IDENTIFIER
+
+#endif
+
+/* =========================
+ * Scan Auth Mode Threshold
+ * ========================= */
+
+#if CONFIG_DRIVER_WIFI_AUTH_OPEN
+#define DRIVER_WIFI_SCAN_AUTH_MODE WIFI_AUTH_OPEN
+
+#elif CONFIG_DRIVER_WIFI_AUTH_WEP
+#define DRIVER_WIFI_SCAN_AUTH_MODE WIFI_AUTH_WEP
+
+#elif CONFIG_DRIVER_WIFI_AUTH_WPA_PSK
+#define DRIVER_WIFI_SCAN_AUTH_MODE WIFI_AUTH_WPA_PSK
+
+#elif CONFIG_DRIVER_WIFI_AUTH_WPA2_PSK
+#define DRIVER_WIFI_SCAN_AUTH_MODE WIFI_AUTH_WPA2_PSK
+
+#elif CONFIG_DRIVER_WIFI_AUTH_WPA_WPA2_PSK
+#define DRIVER_WIFI_SCAN_AUTH_MODE WIFI_AUTH_WPA_WPA2_PSK
+
+#elif CONFIG_DRIVER_WIFI_AUTH_WPA3_PSK
+#define DRIVER_WIFI_SCAN_AUTH_MODE WIFI_AUTH_WPA3_PSK
+
+#elif CONFIG_DRIVER_WIFI_AUTH_WPA2_WPA3_PSK
+#define DRIVER_WIFI_SCAN_AUTH_MODE WIFI_AUTH_WPA2_WPA3_PSK
+
+#elif CONFIG_DRIVER_WIFI_AUTH_WAPI_PSK
+#define DRIVER_WIFI_SCAN_AUTH_MODE WIFI_AUTH_WAPI_PSK
+
+#endif
 
 static const char *TAG = "DRIVER_WIFI";
 
@@ -25,7 +79,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     esp_wifi_connect();
   } else if (event_base == WIFI_EVENT &&
              event_id == WIFI_EVENT_STA_DISCONNECTED) {
-    if (s_retry_num < CONFIG_DRIVER_WIFI_MAX_RETRIES) {
+    if (s_retry_num < CONFIG_DRIVER_WIFI_MAX_RETRY) {
       esp_wifi_connect();
       s_retry_num++;
       ESP_LOGI(TAG, "retry to connect to the AP");
@@ -74,9 +128,9 @@ esp_err_t wifi_init(driver_wifi_config_t *config) {
                * the password with length and format matching to
                * WIFI_AUTH_WEP/WIFI_AUTH_WPA_PSK standards.
                */
-              .threshold.authmode = WIFI_AUTH_WPA2_WPA3_PSK,
-              .sae_pwe_h2e = WPA3_SAE_PWE_HUNT_AND_PECK,
-              .sae_h2e_identifier = "",
+              .threshold.authmode = DRIVER_WIFI_SCAN_AUTH_MODE,
+              .sae_pwe_h2e = DRIVER_WIFI_SAE_MODE,
+              .sae_h2e_identifier = DRIVER_WIFI_SAE_PASSWORD_IDENTIFIER,
           },
   };
 

@@ -65,7 +65,7 @@ char *get_clients_address(struct sockaddr_storage *source_addr);
  *          -2 : Socket is not connected, to distinguish between an actual
  * socket error and active disconnection
  */
-int try_receive(const char *tag, const int sock, char *data,
+int try_receive(const char *tag, const int sock, uint8_t *data,
                        size_t max_len);
 
 /**
@@ -80,7 +80,7 @@ int try_receive(const char *tag, const int sock, char *data,
  *          >0 : Size the written data
  *          -1 : Error occurred during socket write operation
  */
-int socket_send(const char *tag, const int sock, const char *data,
+int socket_send(const char *tag, const int sock, const uint8_t *data,
                        const size_t len);
 
 #endif // _DRIVER_SOCKET_H_
