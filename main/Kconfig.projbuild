@@ -23,4 +23,16 @@ menu "Talos ESP Driver Configuration"
 		help
 		  I2C address for the MotorHAT device.
 
+	config ADS_I2C_BUS
+		int "ADS1015 I2C Bus Number"
+		default 1
+		help
+		  I2C bus number for ADS1015 communication.
+	
+	config ADS_ADDRESS
+		hex "ADS1015 I2C Address"
+		default 0x48
+		help
+		  I2C address for the ADS1015 device.
+
 endmenu
