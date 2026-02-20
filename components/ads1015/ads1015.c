@@ -7,39 +7,35 @@
 
 #define TAG "ADS1015"
 
-static void IRAM_ATTR ads1015_isr(void *arg) {
-    ads1015_handle_t *handle = (ads1015_handle_t *)arg;
-    gpio_intr_disable(handle->alert_gpio); // Disable interrupt until this conversion is done
+// static void IRAM_ATTR ads1015_isr(void *arg) {
+//     ads1015_handle_t *handle = (ads1015_handle_t *)arg;
+//     if (handle->rdy_sem != NULL) {
+//         gpio_intr_disable(handle->alert_gpio); // Disable interrupt until this conversion is done
+//         BaseType_t high_task_woken = pdFALSE;
+//         xSemaphoreGiveFromISR(handle->rdy_sem, &high_task_woken);
+//         if (high_task_woken) portYIELD_FROM_ISR();
+//     }
+// }
 
-    if (handle->rdy_sem == NULL){
-        return ESP_ERR_INVALID_STATE;
-    }
+// void adc_task(void *arg){
+//     ads1015_handle_t *handle = (ads1015_handle_t *)arg;
+//     // gpio_intr_enable(handle->alert_gpio);
+//     // ESP_ERROR_CHECK(ads1015_start_conversion(handle));
 
-    BaseType_t high_task_woken = pdFALSE;
-    xSemaphoreGiveFromISR(handle->rdy_sem, &high_task_woken);
-    if (high_task_woken) {
-        portYIELD_FROM_ISR();
-    }
-}
+//     while (1){
+//         ads1015_start_conversion(handle);
 
-void adc_task(void *arg){
-    ads1015_handle_t *handle = (ads1015_handle_t *)arg;
-    gpio_intr_enable(handle->alert_gpio); // Enable interrupt now that the task will handle it
+//         vTaskDelay(pdMS_TO_TICKS(10));
 
-    while (1){
-        if (xSemaphoreTake(handle->rdy_sem, portMAX_DELAY)){
-            uint16_t raw;
-            ads1015_read_register(handle, ADS1015_CONVERSION, &raw);
-
-            raw >>= 4; // ADS1015 is 12-bit, so shift to get the actual value
-
-            // ESP_LOGI(TAG, "ADC value: %u", raw);
-
-            gpio_intr_enable(handle->alert_gpio); // Re-enable interrupt for next conversion
-            ads1015_start_conversion(handle);
-        }
-    }
-}
+//         uint16_t raw;
+//         if (ads1015_read_register(handle, ADS1015_CONVERSION, &raw) == ESP_OK) {
+//             raw >>= 4;
+//             ESP_LOGI(TAG, "ADC value (polling): %u", raw);
+//         } else {
+//             ESP_LOGW(TAG, "ADC read failed");
+//         }
+//     }
+// }
 
 esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
     ESP_LOGI(TAG, "Initializing ADS1015...");
@@ -82,31 +78,29 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
       config_reg
     ));
 
-    // Create binary semaphore
-    handle->rdy_sem = xSemaphoreCreateBinary();
-    assert(handle->rdy_sem != NULL);
+    // // Create binary semaphore
+    // handle->rdy_sem = xSemaphoreCreateBinary();
+    // assert(handle->rdy_sem != NULL);
 
-    // Configure alert GPIO pin
-    gpio_config_t io_conf = {
-        .intr_type = GPIO_INTR_NEGEDGE,
-        .mode = GPIO_MODE_INPUT,
-        .pin_bit_mask = 1ULL << handle->alert_gpio,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-    };
+    // // Configure alert GPIO pin
+    // gpio_config_t io_conf = {
+    //     .intr_type = GPIO_INTR_NEGEDGE,
+    //     .mode = GPIO_MODE_INPUT,
+    //     .pin_bit_mask = 1ULL << handle->alert_gpio,
+    //     .pull_up_en = GPIO_PULLUP_ENABLE,
+    //     .pull_down_en = GPIO_PULLDOWN_DISABLE,
+    // };
 
-    ESP_ERROR_CHECK(gpio_config(&io_conf));
+    // ESP_ERROR_CHECK(gpio_config(&io_conf));
 
-    // Setup the interrupt service
-    ESP_ERROR_CHECK(gpio_install_isr_service(0));
-    ESP_ERROR_CHECK(gpio_isr_handler_add(handle->alert_gpio, ads1015_isr, handle));
+    // // Setup the interrupt service
+    // ESP_ERROR_CHECK(gpio_install_isr_service(0));
+    // ESP_ERROR_CHECK(gpio_isr_handler_add(handle->alert_gpio, ads1015_isr, handle));
 
-    // Disable interrupt until adc_task is ready to handle it
-    gpio_intr_disable(handle->alert_gpio);
+    // // Disable interrupt until adc_task is ready to handle it
+    // gpio_intr_disable(handle->alert_gpio);
     
-    xTaskCreate(adc_task, "adc_task", 4096, handle, 5, NULL);
-
-    ads1015_start_conversion(handle);
+    // xTaskCreate(adc_task, "adc_task", 4096, handle, 5, NULL);
 
     ESP_LOGI(TAG, "ADS1015 initialized");
 
