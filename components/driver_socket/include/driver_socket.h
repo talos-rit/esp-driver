@@ -4,6 +4,10 @@
 #include "freertos/FreeRTOS.h"
 #include "sys/socket.h"
 
+
+/**
+ * @brief Socket driver handle and configuration structures
+ */
 typedef struct {
   int fd;
 } driver_socket_handle_t;
@@ -13,6 +17,10 @@ typedef struct {
   const char *port;
 } driver_socket_config_t;
 
+
+/**
+ * @brief Task arguments structure for the socket task
+ */
 typedef struct {
   driver_socket_handle_t socket;
   driver_socket_config_t config;
