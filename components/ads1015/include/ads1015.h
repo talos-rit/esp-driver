@@ -36,6 +36,7 @@ typedef struct {
     i2c_master_dev_handle_t dev_handle; /**< I2C device handle */
     gpio_num_t alert_gpio;              /**< GPIO number for RDY pin */
     SemaphoreHandle_t rdy_sem;          /**< Binary semaphore to signal when a new conversion is ready */
+    uint16_t config_reg;                /**< Cached config register value for easy updates */
 } ads1015_handle_t;
 
 /**
@@ -54,6 +55,18 @@ typedef struct {
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
 esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config);
+
+/**
+ * @brief Start a single conversion on the ADS1015 in single shot mode
+ *
+ * @param[in] handle Pointer to ADS1015 handle
+ *
+ * @return
+ *    - ESP_OK: Success
+ *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer)
+ *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
+ */
+esp_err_t ads1015_start_conversion(ads1015_handle_t *handle);
 
 /**
  * @brief Read one or more registers from the ADS1015
