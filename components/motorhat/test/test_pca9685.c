@@ -74,7 +74,7 @@ TEST(PCA9685, PCA9685_Set_Duty_Cycle) {
   TEST_ASSERT_EQUAL(0, on_l);
   uint16_t on = (on_h << 8) | on_l;
   uint16_t off = (off_h << 8) | off_l;
-  uint16_t expected_off = (uint16_t)(PCA9685_PWM_MAX * 0.5f);
+  uint16_t expected_off = 2048;
   TEST_ASSERT_EQUAL(0, on);
   TEST_ASSERT_EQUAL(expected_off, off);
 }
