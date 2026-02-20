@@ -8,6 +8,23 @@
 
 #define TAG "MAIN"
 
+void adc_task(void *arg){
+    ads1015_handle_t *handle = (ads1015_handle_t *)arg;
+
+    while (1){
+        // Wait forever until conversion ready interrupt fires
+        if (xSemaphoreTake(handle->rdy_sem, portMAX_DELAY)){
+            uint16_t raw;
+            ads1015_read_register(handle, ADS1015_CONVERSION, &raw);
+
+            // ADS1015 is 12-bit left aligned
+            raw >>= 4;
+
+            ESP_LOGI(TAG, "ADC value: %u", raw);
+        }
+    }
+}
+
 void app_main(void) {
 
   i2c_bus_t bus;
@@ -22,11 +39,12 @@ void app_main(void) {
   ads1015_config_t ads_config = {
       .i2c_addr = CONFIG_ADS_ADDRESS,
       .i2c_speed_hz = 400000,
-      .alert_gpio = GPIO_NUM_NC,
+      .alert_gpio = GPIO_NUM_20,
       .bus_handle = bus.handle,
   };
 
   ESP_ERROR_CHECK(ads_init(&ads, &ads_config));
+  xTaskCreate(adc_task, "adc_task", 4096, &ads, 5, NULL);
 
   // motorhat_handle_t motorhat;
 
