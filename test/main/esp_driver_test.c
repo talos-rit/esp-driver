@@ -1,39 +1,21 @@
-/* Example test application for testable component.
+#include "unity_fixture.h"
 
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
+static void print_banner(const char *text);
 
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
-
-#include <stdio.h>
-#include <string.h>
-#include "unity.h"
-
-static void print_banner(const char* text);
-
-void app_main(void)
-{
-    /* These are the different ways of running registered tests.
-     * In practice, only one of them is usually needed.
-     *
-     * UNITY_BEGIN() and UNITY_END() calls tell Unity to print a summary
-     * (number of tests executed/failed/ignored) of tests executed between these calls.
-     */
-    print_banner("Running all the registered tests");
-    UNITY_BEGIN();
-    unity_run_all_tests();
-    UNITY_END();
-
-    print_banner("Starting interactive test menu");
-    /* This function will not return, and will be busy waiting for UART input.
-     * Make sure that task watchdog is disabled if you use this function.
-     */
-    unity_run_menu();
+static void run_all_tests(void) {
+  RUN_TEST_GROUP(I2C_Bus);
+  RUN_TEST_GROUP(PCA9685);
+  RUN_TEST_GROUP(MotorHAT);
 }
 
-static void print_banner(const char* text)
-{
-    printf("\n#### %s #####\n\n", text);
+void app_main(void) {
+
+  print_banner("ESP Driver Test");
+  char *unity_args[] = {"esp_driver_test"};
+  const char **argv = (const char **)unity_args;
+  UnityMain(0, argv, run_all_tests);
+}
+
+static void print_banner(const char *text) {
+  printf("\n#### %s #####\n\n", text);
 }
