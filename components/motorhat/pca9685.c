@@ -108,6 +108,20 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
   return ESP_OK;
 }
 
+esp_err_t pca9685_deinit(pca9685_handle_t *handle) {
+  if (handle == NULL || handle->dev_handle == NULL) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  esp_err_t ret = i2c_master_bus_rm_device(handle->dev_handle);
+  if (ret != ESP_OK) {
+    return ret;
+  }
+
+  handle->dev_handle = NULL;
+  return ESP_OK;
+}
+
 esp_err_t pca9685_set_duty_cycle(pca9685_handle_t *handle,
                                  pca9685_channel_t channel,
                                  uint16_t duty_cycle) {

@@ -208,6 +208,19 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
                        const pca9685_config_t *config);
 
 /**
+ * @brief Deinitialize the PCA9685 device
+ *
+ * This function releases the I2C device handle and performs any necessary cleanup.
+ *
+ * @param[in] handle Pointer to PCA9685 handle structure
+ * @return
+ *    - ESP_OK: Success
+ *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer)
+ *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
+ */
+ esp_err_t pca9685_deinit(pca9685_handle_t *handle);
+
+/**
  * @brief Set PWM duty cycle for a specific channel
  *
  * Sets the duty cycle for a channel using a 12-bit value (0-4096).
