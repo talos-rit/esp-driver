@@ -2,14 +2,14 @@ menu "PCA9685 Configuration"
 
     config PCA9685_TEST_SDA_PIN
         int "Test I2C SDA GPIO"
-        default 21
+        default 18
 
     config PCA9685_TEST_SCL_PIN
         int "Test I2C SCL GPIO"
-        default 22
+        default 19
 
     config PCA9685_TEST_ADDR
         hex "Test I2C address"
-        default 0x40
+        default 0x60
 
 endmenu
