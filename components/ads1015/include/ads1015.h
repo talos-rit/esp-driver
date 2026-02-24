@@ -25,10 +25,10 @@ typedef enum {
  * @brief ADS1015 configuration structure
  */
 typedef struct {
-    uint8_t i2c_addr;                   /**< I2C device address (should be 0x48 if ADDR is connected to GND) */
+    uint8_t i2c_addr;                   /**< I2C device address */
     uint32_t i2c_speed_hz;              /**< I2C bus speed in Hz */
     i2c_master_bus_handle_t bus_handle; /**< I2C master bus handle */
-    gpio_num_t alert_gpio;              /**< GPIO number for RDY pin (gets passed to ads1015_handle_t) */
+    gpio_num_t alert_gpio;              /**< GPIO number for ALERT pin */
 } ads1015_config_t;
 
 /**
@@ -36,6 +36,7 @@ typedef struct {
  */
 typedef struct {
     i2c_master_dev_handle_t dev_handle; /**< I2C device handle */
+    gpio_num_t alert_gpio;              /**< GPIO number for ALERT pin */
 } ads1015_handle_t;
 
 /**
@@ -54,6 +55,14 @@ typedef struct {
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
 esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config);
+
+/**
+ * @brief Trigger an overcurrent emergency stop.
+ *
+ * @return
+ *    - ESP_OK: Success
+ */
+esp_err_t trigger_estop();
 
 /**
  * @brief Read one or more registers from the ADS1015

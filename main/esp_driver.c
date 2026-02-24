@@ -27,30 +27,25 @@ void app_main(void) {
   };
   ESP_ERROR_CHECK(ads_init(&ads, &ads_config));
 
-  while(1) {
-    vTaskDelay(pdMS_TO_TICKS(5000));
-    ESP_LOGI(TAG, "main task running...");
-  }
+  motorhat_handle_t motorhat;
 
-  // motorhat_handle_t motorhat;
+  motorhat_config_t motorhat_config = {
+      .pca9685_config =
+          {
+              .i2c_addr = CONFIG_MOTORHAT_ADDRESS,
+              .i2c_speed_hz = 400000,
+              .pwm_freq_hz = DEFAULT_FREQUENCY_HZ,
+              .bus_handle = bus.handle,
+          },
+  };
 
-  // motorhat_config_t motorhat_config = {
-  //     .pca9685_config =
-  //         {
-  //             .i2c_addr = CONFIG_MOTORHAT_ADDRESS,
-  //             .i2c_speed_hz = 400000,
-  //             .pwm_freq_hz = DEFAULT_FREQUENCY_HZ,
-  //             .bus_handle = bus.handle,
-  //         },
-  // };
+  ESP_ERROR_CHECK(motorhat_init(&motorhat, &motorhat_config));
 
-  // ESP_ERROR_CHECK(motorhat_init(&motorhat, &motorhat_config));
+  motorhat_set_motor_direction(&motorhat, MOTORHAT_MOTOR1,
+                               MOTORHAT_DIRECTION_FORWARD);
+  motorhat_set_motor_speed(&motorhat, MOTORHAT_MOTOR1, 200);
 
-  // motorhat_set_motor_direction(&motorhat, MOTORHAT_MOTOR1,
-  //                              MOTORHAT_DIRECTION_FORWARD);
-  // motorhat_set_motor_speed(&motorhat, MOTORHAT_MOTOR1, 200);
-
-  // vTaskDelay(1000 / portTICK_PERIOD_MS);
-  // motorhat_set_motor_speed(&motorhat, MOTORHAT_MOTOR1,
-  //                          MOTORHAT_DIRECTION_RELEASE);
+  vTaskDelay(1000 / portTICK_PERIOD_MS);
+  motorhat_set_motor_speed(&motorhat, MOTORHAT_MOTOR1,
+                           MOTORHAT_DIRECTION_RELEASE);
 }
