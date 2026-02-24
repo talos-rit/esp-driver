@@ -1,0 +1,11 @@
+menu "I2CBUS Configuration"
+
+    config I2CBUS_TEST_SDA_PIN
+        int "Test I2C SDA GPIO"
+        default 18
+
+    config I2CBUS_TEST_SCL_PIN
+        int "Test I2C SCL GPIO"
+        default 19
+
+endmenu

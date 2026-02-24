@@ -1,6 +1,13 @@
 #include "motorhat.h"
-#include "unity.h"
+#include "unity_fixture.h"
 
-TEST_CASE("MotorHAT Motor Control Test", "[motorhat]") {
-  TEST_ASSERT_EQUAL(true, true);
+TEST_GROUP(MotorHAT);
+
+TEST_SETUP(MotorHAT) {}
+
+TEST_TEAR_DOWN(MotorHAT) {}
+
+TEST(MotorHAT, MotorHAT_Initialization) {
+  // TODO:
+  TEST_ASSERT_EQUAL(ESP_OK, ESP_FAIL);
 }
