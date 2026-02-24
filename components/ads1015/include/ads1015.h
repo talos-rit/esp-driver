@@ -8,6 +8,8 @@
 #include "freertos/semphr.h"
 
 #define ADS1015_I2C_MASTER_TIMEOUT_MS 1000
+#define ADS1015_COMPARATOR_HIGH_THRESH 1000
+#define ADS1015_COMPARATOR_LOW_THRESH 900
 
 /**
  * @brief ADS1015 register addresses
@@ -34,16 +36,13 @@ typedef struct {
  */
 typedef struct {
     i2c_master_dev_handle_t dev_handle; /**< I2C device handle */
-    gpio_num_t alert_gpio;              /**< GPIO number for RDY pin */
-    SemaphoreHandle_t rdy_sem;          /**< Binary semaphore to signal when a new conversion is ready */
-    uint16_t config_reg;                /**< Cached config register value for easy updates */
 } ads1015_handle_t;
 
 /**
  * @brief Initialize the ADS1015 device
  *
  * This function initializes the ADS1015 device, configures the I2C
- * communication, sets the device address, and initializes the alert GPIO.
+ * communication, sets the device address, and sets up the alert GPIO.
  *
  * @param[out] handle Pointer to ADS1015 handle structure
  * @param[in] config Pointer to configuration structure
@@ -55,18 +54,6 @@ typedef struct {
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
 esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config);
-
-/**
- * @brief Start a single conversion on the ADS1015 in single shot mode
- *
- * @param[in] handle Pointer to ADS1015 handle
- *
- * @return
- *    - ESP_OK: Success
- *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer)
- *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
- */
-esp_err_t ads1015_start_conversion(ads1015_handle_t *handle);
 
 /**
  * @brief Read one or more registers from the ADS1015

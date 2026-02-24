@@ -25,8 +25,12 @@ void app_main(void) {
       .alert_gpio = GPIO_NUM_21,
       .bus_handle = bus.handle,
   };
-
   ESP_ERROR_CHECK(ads_init(&ads, &ads_config));
+
+  while(1) {
+    vTaskDelay(pdMS_TO_TICKS(5000));
+    ESP_LOGI(TAG, "main task running...");
+  }
 
   // motorhat_handle_t motorhat;
 
