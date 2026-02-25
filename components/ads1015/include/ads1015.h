@@ -140,7 +140,6 @@ typedef struct {
  */
 typedef struct {
     i2c_master_dev_handle_t dev_handle; /**< I2C device handle */
-    gpio_num_t alert_gpio;              /**< GPIO number for ALERT pin */
     uint16_t config_reg;                /**< ADS1015 config register values */
 } ads1015_handle_t;
 
