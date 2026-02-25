@@ -37,13 +37,13 @@ menu "Talos ESP Driver Configuration"
 
   config ADS1015_COMPARATOR_HIGH_THRESH
     int "ADS1015 COMPARATOR HIGH THRESH"
-    default 1000
+    default 100
     help
       High threshhold for overcurrent alert
 
   config ADS1015_COMPARATOR_LOW_THRESH
     int "ADS1015 COMPARATOR LOW THRESH"
-    default -1000
+    default -100
     help
       Low threshhold for overcurrent alert
 

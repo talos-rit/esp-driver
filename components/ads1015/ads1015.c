@@ -23,25 +23,11 @@ static void IRAM_ATTR ads1015_isr(void *arg){
     }
 }
 
-void adc_task(void *arg){
-    ads1015_handle_t *handle = (ads1015_handle_t *)arg;
+void adc_task(){
     while (1) {
         // Wait until interrupt fires
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
-        // Check level of alert GPIO
-        bool asserted = (gpio_get_level(handle->alert_gpio) == 0);
-        static bool estop_active = false;
-
-        if (!estop_active && asserted) {
-            estop_active = true;
-            trigger_estop();
-        }
-
-        if (estop_active && !asserted) {
-            estop_active = false;
-            ESP_LOGI(TAG, "latch cleared");
-        }
+        ESP_LOGW(TAG, "Overcurrent E-stop triggered!!!"); // TODO: Implement E-stop
     }
 }
 
@@ -50,9 +36,10 @@ void test_task(void *arg){
     while (1) {
         uint16_t raw;
         if (ads1015_read_register(handle, ADS1015_CONVERSION, &raw) == ESP_OK){
-            ESP_LOGI(TAG, "ADC Value: %u", raw >> 4);
+            int16_t value = ((int16_t)raw) >> 4;
+            ESP_LOGI(TAG, "ADC Value: %d", value);
         }
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(250));
     }
 }
 
@@ -76,8 +63,10 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
     // Set comparator threshold registers
     int16_t high_raw = CONFIG_ADS1015_COMPARATOR_HIGH_THRESH;
     int16_t low_raw  = CONFIG_ADS1015_COMPARATOR_LOW_THRESH;
-    ESP_ERROR_CHECK(ads1015_write_register(handle, ADS1015_HIGH_THRESH, (uint16_t)(high_raw << 4)));
-    ESP_ERROR_CHECK(ads1015_write_register(handle, ADS1015_LOW_THRESH, (uint16_t)(low_raw << 4)));
+    uint16_t high_thresh = (uint16_t)((uint16_t)high_raw << 4);
+    uint16_t low_thresh  = (uint16_t)((uint16_t)low_raw  << 4);\
+    ESP_ERROR_CHECK(ads1015_write_register(handle, ADS1015_HIGH_THRESH, high_thresh));
+    ESP_ERROR_CHECK(ads1015_write_register(handle, ADS1015_LOW_THRESH, low_thresh));
 
     // Write config register
     uint16_t config_reg = 0;
@@ -90,7 +79,7 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
     config_reg |= (0b111 << 5);   // 3300 samples per second
     config_reg |= (1 << 4);       // Window comparator
     config_reg |= (0 << 3);       // Active low
-    config_reg |= (0 << 2);       // Non-latching comparator mode
+    config_reg |= (1 << 2);       // Latching comparator mode
     config_reg |= (0b00);         // Assert after 1 conversion
     config_reg |= (1 << 15);      // Start conversions immediately
 
@@ -108,7 +97,7 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
     ESP_ERROR_CHECK(gpio_install_isr_service(0));
 
     gpio_config_t io_conf = {
-        .intr_type = GPIO_INTR_ANYEDGE,
+        .intr_type = GPIO_INTR_NEGEDGE,
         .mode = GPIO_MODE_INPUT,
         .pin_bit_mask = 1ULL << config->alert_gpio,
         .pull_up_en = GPIO_PULLUP_ENABLE,
@@ -120,12 +109,6 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
 
     ESP_LOGI(TAG, "ADS1015 initialized");
 
-    return ESP_OK;
-}
-
-esp_err_t trigger_estop() {
-    // TODO: Implement E-stop
-    ESP_LOGW(TAG, "Overcurrent E-stop triggered!!!");
     return ESP_OK;
 }
 

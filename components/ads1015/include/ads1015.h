@@ -55,14 +55,6 @@ typedef struct {
 esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config);
 
 /**
- * @brief Trigger an overcurrent emergency stop.
- *
- * @return
- *    - ESP_OK: Success
- */
-esp_err_t trigger_estop();
-
-/**
  * @brief Read one or more registers from the ADS1015
  *
  * @param[in] handle Pointer to ADS1015 handle
