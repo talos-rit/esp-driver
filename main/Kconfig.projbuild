@@ -35,4 +35,16 @@ menu "Talos ESP Driver Configuration"
 		help
 		  I2C address for the ADS1015 device.
 
+  config ADS1015_COMPARATOR_HIGH_THRESH
+    int "ADS1015 COMPARATOR HIGH THRESH"
+    default 1000
+    help
+      High threshhold for overcurrent alert
+
+  config ADS1015_COMPARATOR_LOW_THRESH
+    int "ADS1015 COMPARATOR LOW THRESH"
+    default -1000
+    help
+      Low threshhold for overcurrent alert
+
 endmenu

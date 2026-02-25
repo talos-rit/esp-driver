@@ -1,8 +1,0 @@
-{
-  "idf.currentSetup": "C:\\Users\\kaifr\\esp\\v5.5.2\\esp-idf",
-  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
-  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
-  "C_Cpp.intelliSenseEngine": "default",
-  "idf.flashType": "UART",
-  "idf.portWin": "COM3"
-}

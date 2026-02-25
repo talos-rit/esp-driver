@@ -7,9 +7,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
-#define ADS1015_I2C_MASTER_TIMEOUT_MS 1000
-#define ADS1015_COMPARATOR_HIGH_THRESH 200
-#define ADS1015_COMPARATOR_LOW_THRESH 50
+# define ADS1015_I2C_MASTER_TIMEOUT_MS 1000
 
 /**
  * @brief ADS1015 register addresses

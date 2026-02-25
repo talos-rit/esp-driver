@@ -40,7 +40,19 @@ void adc_task(void *arg){
 
         if (estop_active && !asserted) {
             estop_active = false;
+            ESP_LOGI(TAG, "latch cleared");
         }
+    }
+}
+
+void test_task(void *arg){
+    ads1015_handle_t *handle = (ads1015_handle_t *)arg;
+    while (1) {
+        uint16_t raw;
+        if (ads1015_read_register(handle, ADS1015_CONVERSION, &raw) == ESP_OK){
+            ESP_LOGI(TAG, "ADC Value: %u", raw >> 4);
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
 
@@ -62,17 +74,21 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
     ESP_ERROR_CHECK(i2c_master_bus_add_device(config->bus_handle, &dev_config, &handle->dev_handle));
 
     // Set comparator threshold registers
-    ESP_ERROR_CHECK(ads1015_write_register(handle, ADS1015_HIGH_THRESH, ADS1015_COMPARATOR_HIGH_THRESH << 4));
-    ESP_ERROR_CHECK(ads1015_write_register(handle, ADS1015_LOW_THRESH, ADS1015_COMPARATOR_LOW_THRESH << 4));
+    int16_t high_raw = CONFIG_ADS1015_COMPARATOR_HIGH_THRESH;
+    int16_t low_raw  = CONFIG_ADS1015_COMPARATOR_LOW_THRESH;
+    ESP_ERROR_CHECK(ads1015_write_register(handle, ADS1015_HIGH_THRESH, (uint16_t)(high_raw << 4)));
+    ESP_ERROR_CHECK(ads1015_write_register(handle, ADS1015_LOW_THRESH, (uint16_t)(low_raw << 4)));
 
     // Write config register
     uint16_t config_reg = 0;
 
-    config_reg |= (0b000 << 12);  // Set mux inputs to A0 and A1
+    // TODO: Set up config register enums
+
+    config_reg |= (0b001 << 12);  // Set mux inputs
     config_reg |= (0b001 << 9);   // Set gain to ±4.096V
     config_reg |= (0 << 8);       // Continuous mode
     config_reg |= (0b111 << 5);   // 3300 samples per second
-    config_reg |= (0 << 4);       // Traditional comparator
+    config_reg |= (1 << 4);       // Window comparator
     config_reg |= (0 << 3);       // Active low
     config_reg |= (0 << 2);       // Non-latching comparator mode
     config_reg |= (0b00);         // Assert after 1 conversion
@@ -86,6 +102,7 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
 
     // Start task that waits for interrupt
     xTaskCreate(adc_task, "adc_task", 4096, handle, 10, &adc_task_handle);
+    xTaskCreate(test_task, "test_task", 4096, handle, 5, NULL);
 
     // Configure alert GPIO and interrupt service
     ESP_ERROR_CHECK(gpio_install_isr_service(0));
