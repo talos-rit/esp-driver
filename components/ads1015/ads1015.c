@@ -69,19 +69,17 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
     ESP_ERROR_CHECK(ads1015_write_register(handle, ADS1015_LOW_THRESH, low_thresh));
 
     // Write config register
-    uint16_t config_reg = 0;
-
-    // TODO: Set up config register enums
-
-    config_reg |= (0b001 << 12);  // Set mux inputs
-    config_reg |= (0b001 << 9);   // Set gain to ±4.096V
-    config_reg |= (0 << 8);       // Continuous mode
-    config_reg |= (0b111 << 5);   // 3300 samples per second
-    config_reg |= (1 << 4);       // Window comparator
-    config_reg |= (0 << 3);       // Active low
-    config_reg |= (1 << 2);       // Latching comparator mode
-    config_reg |= (0b00);         // Assert after 1 conversion
-    config_reg |= (1 << 15);      // Start conversions immediately
+    uint16_t config_reg = ads1015_build_config(
+        ADS1015_MUX_AIN0_AIN3,
+        ADS1015_PGA_4_096V,
+        ADS1015_MODE_CONTINUOUS,
+        ADS1015_DR_3300SPS,
+        ADS1015_COMP_WINDOW,
+        ADS1015_COMP_ACTIVE_LOW,
+        ADS1015_COMP_LATCHING,
+        ADS1015_COMP_ASSERT_1,
+        true // start conversions
+    );
 
     ESP_ERROR_CHECK(ads1015_write_register(
       handle, 

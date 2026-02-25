@@ -8,6 +8,16 @@
 #include "freertos/semphr.h"
 
 # define ADS1015_I2C_MASTER_TIMEOUT_MS 1000
+// Config Register Bit Positions
+#define ADS1015_OS_BIT            15
+#define ADS1015_MUX_SHIFT         12
+#define ADS1015_PGA_SHIFT         9
+#define ADS1015_MODE_BIT          8
+#define ADS1015_DR_SHIFT          5
+#define ADS1015_COMP_MODE_BIT     4
+#define ADS1015_COMP_POL_BIT      3
+#define ADS1015_COMP_LAT_BIT      2
+#define ADS1015_COMP_QUE_SHIFT    0
 
 /**
  * @brief ADS1015 register addresses
@@ -18,6 +28,101 @@ typedef enum {
     ADS1015_LOW_THRESH = 0x02,
     ADS1015_HIGH_THRESH = 0x03,
 } ads1015_register_t;
+
+/**
+ * @brief ADS1015 MUX register bit definitions
+ */
+typedef enum {
+    ADS1015_MUX_AIN0_AIN1 = 0b000,
+    ADS1015_MUX_AIN0_AIN3 = 0b001,
+    ADS1015_MUX_AIN1_AIN3 = 0b010,
+    ADS1015_MUX_AIN2_AIN3 = 0b011,
+    ADS1015_MUX_AIN0_GND  = 0b100,
+    ADS1015_MUX_AIN1_GND  = 0b101,
+    ADS1015_MUX_AIN2_GND  = 0b110,
+    ADS1015_MUX_AIN3_GND  = 0b111
+} ads1015_mux_t;
+
+/**
+ * @brief ADS1015 PGA register bit definitions
+ */
+typedef enum {
+    ADS1015_PGA_6_144V = 0b000,
+    ADS1015_PGA_4_096V = 0b001,
+    ADS1015_PGA_2_048V = 0b010,
+    ADS1015_PGA_1_024V = 0b011,
+    ADS1015_PGA_0_512V = 0b100,
+    ADS1015_PGA_0_256V = 0b101
+} ads1015_pga_t;
+
+/**
+ * @brief ADS1015 mode register bit definitions
+ */
+typedef enum {
+    ADS1015_MODE_CONTINUOUS = 0,
+    ADS1015_MODE_SINGLESHOT = 1
+} ads1015_mode_t;
+
+/**
+ * @brief ADS1015 data rate register bit definitions
+ */
+typedef enum {
+    ADS1015_DR_128SPS  = 0b000,
+    ADS1015_DR_250SPS  = 0b001,
+    ADS1015_DR_490SPS  = 0b010,
+    ADS1015_DR_920SPS  = 0b011,
+    ADS1015_DR_1600SPS = 0b100,
+    ADS1015_DR_2400SPS = 0b101,
+    ADS1015_DR_3300SPS = 0b110
+} ads1015_dr_t;
+
+/**
+ * @brief ADS1015 comparator settings register bit definitions
+ */
+typedef enum {
+    ADS1015_COMP_TRADITIONAL = 0,
+    ADS1015_COMP_WINDOW      = 1
+} ads1015_comp_mode_t;
+
+typedef enum {
+    ADS1015_COMP_ACTIVE_LOW  = 0,
+    ADS1015_COMP_ACTIVE_HIGH = 1
+} ads1015_comp_pol_t;
+
+typedef enum {
+    ADS1015_COMP_NON_LATCHING = 0,
+    ADS1015_COMP_LATCHING     = 1
+} ads1015_comp_lat_t;
+
+typedef enum {
+    ADS1015_COMP_ASSERT_1 = 0b00,
+    ADS1015_COMP_ASSERT_2 = 0b01,
+    ADS1015_COMP_ASSERT_4 = 0b10,
+    ADS1015_COMP_DISABLE  = 0b11
+} ads1015_comp_que_t;
+
+static inline uint16_t ads1015_build_config(
+    ads1015_mux_t mux,
+    ads1015_pga_t pga,
+    ads1015_mode_t mode,
+    ads1015_dr_t dr,
+    ads1015_comp_mode_t comp_mode,
+    ads1015_comp_pol_t comp_pol,
+    ads1015_comp_lat_t comp_lat,
+    ads1015_comp_que_t comp_que,
+    bool start_conversion
+) {
+    return
+        ((start_conversion ? 1 : 0) << ADS1015_OS_BIT) |
+        (mux        << ADS1015_MUX_SHIFT) |
+        (pga        << ADS1015_PGA_SHIFT) |
+        (mode       << ADS1015_MODE_BIT) |
+        (dr         << ADS1015_DR_SHIFT) |
+        (comp_mode  << ADS1015_COMP_MODE_BIT) |
+        (comp_pol   << ADS1015_COMP_POL_BIT) |
+        (comp_lat   << ADS1015_COMP_LAT_BIT) |
+        (comp_que   << ADS1015_COMP_QUE_SHIFT);
+}
 
 /**
  * @brief ADS1015 configuration structure
