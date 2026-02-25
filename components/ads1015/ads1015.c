@@ -23,7 +23,7 @@ static void IRAM_ATTR ads1015_isr(void *arg){
     }
 }
 
-void adc_task(){
+void overcurrent_task(){
     while (1) {
         // Wait until interrupt fires
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -39,7 +39,35 @@ void test_task(void *arg){
             int16_t value = ((int16_t)raw) >> 4;
             ESP_LOGI(TAG, "ADC Value: %d", value);
         }
+        uint16_t mux;
+        if (ads1015_read_register(handle, ADS1015_CONFIG, &mux) == ESP_OK){
+            int16_t value = (mux >> ADS1015_MUX_SHIFT) & 0b111;
+            ESP_LOGI(TAG, "mux: %d", value);
+        }
         vTaskDelay(pdMS_TO_TICKS(250));
+    }
+}
+
+void cycle_mux_task(void *arg){
+    ads1015_handle_t *handle = (ads1015_handle_t *)arg;
+    bool mux_state = true;
+    while (1) {
+        // Switch mux inputs
+        uint16_t config_reg = handle->config_reg;
+        config_reg &= ~(0b111 << ADS1015_MUX_SHIFT);  // clear MUX bits
+        config_reg |= (mux_state ? (ADS1015_MUX_AIN0_AIN1 << ADS1015_MUX_SHIFT)
+                          : (ADS1015_MUX_AIN2_AIN3 << ADS1015_MUX_SHIFT));
+        handle->config_reg = config_reg;
+
+        ads1015_start_conversion(handle);
+
+        // Poll until conversion is done
+        uint16_t conf;
+        do {
+            ESP_ERROR_CHECK(ads1015_read_register(handle, ADS1015_CONFIG, &conf));
+        } while (!(conf & (1 << ADS1015_OS_BIT)));
+
+        mux_state = !mux_state;
     }
 }
 
@@ -70,15 +98,15 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
 
     // Write config register
     uint16_t config_reg = ads1015_build_config(
-        ADS1015_MUX_AIN0_AIN3,
+        ADS1015_MUX_AIN0_AIN1,
         ADS1015_PGA_4_096V,
-        ADS1015_MODE_CONTINUOUS,
+        ADS1015_MODE_SINGLESHOT,
         ADS1015_DR_3300SPS,
         ADS1015_COMP_WINDOW,
         ADS1015_COMP_ACTIVE_LOW,
         ADS1015_COMP_LATCHING,
         ADS1015_COMP_ASSERT_1,
-        true // start conversions
+        false // don't conversions immediately
     );
 
     ESP_ERROR_CHECK(ads1015_write_register(
@@ -87,8 +115,11 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
       config_reg
     ));
 
+    handle->config_reg = config_reg;
+
     // Start task that waits for interrupt
-    xTaskCreate(adc_task, "adc_task", 4096, handle, 10, &adc_task_handle);
+    xTaskCreate(overcurrent_task, "overcurrent_task", 4096, handle, 10, &adc_task_handle);
+    xTaskCreate(cycle_mux_task, "cycle_mux_task", 4096, handle, 5, NULL);
     xTaskCreate(test_task, "test_task", 4096, handle, 5, NULL);
 
     // Configure alert GPIO and interrupt service
@@ -108,6 +139,18 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
     ESP_LOGI(TAG, "ADS1015 initialized");
 
     return ESP_OK;
+}
+
+esp_err_t ads1015_start_conversion(ads1015_handle_t *handle) {
+    if (handle == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    return ads1015_write_register(
+      handle, 
+      ADS1015_CONFIG, 
+      handle->config_reg | (1 << ADS1015_OS_BIT)
+    );
 }
 
 esp_err_t ads1015_read_register(ads1015_handle_t *handle, ads1015_register_t reg, uint16_t *data) {
