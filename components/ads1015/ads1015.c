@@ -2,7 +2,6 @@
 #include "driver/i2c_master.h"
 #include "esp_err.h"
 #include "esp_log.h"
-#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 
 #define TAG "ADS1015"
@@ -40,7 +39,7 @@ void adc_task(void *arg){
         uint16_t raw;
         if (ads1015_read_register(handle, ADS1015_CONVERSION, &raw) == ESP_OK){
             int16_t value = ((int16_t)raw) >> 4;
-            ESP_LOGI(TAG, "ADC Value: %d", value);
+            ads1015_check_current(value);
         }
 
         // Switch MUX inputs and start next conversion
@@ -77,7 +76,7 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
         ADS1015_MUX_AIN0_AIN1,
         ADS1015_PGA_4_096V,
         ADS1015_MODE_SINGLESHOT,
-        ADS1015_DR_128SPS,
+        ADS1015_DR_3300SPS,
         ADS1015_COMP_TRADITIONAL,
         ADS1015_COMP_ACTIVE_LOW,
         ADS1015_COMP_NON_LATCHING,
@@ -114,16 +113,12 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
     return ESP_OK;
 }
 
-esp_err_t ads1015_write_config(ads1015_handle_t *handle) {
-    if (handle == NULL) {
-        return ESP_ERR_INVALID_ARG;
+esp_err_t ads1015_check_current(int16_t value){
+    if (value >= CONFIG_ADS_HIGH_THRESH || value <= CONFIG_ADS_LOW_THRESH){
+        ESP_LOGW(TAG, "Threshhold exceeded");
+        // Trigger E-stop
     }
-
-    return ads1015_write_register(
-      handle, 
-      ADS1015_CONFIG, 
-      handle->config_reg | (1 << ADS1015_OS_BIT)
-    );
+    return ESP_OK;
 }
 
 esp_err_t ads1015_read_register(ads1015_handle_t *handle, ads1015_register_t reg, uint16_t *data) {

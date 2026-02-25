@@ -161,16 +161,14 @@ typedef struct {
 esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config);
 
 /**
- * @brief Start a single conversion on the ADS1015 in single shot mode
+ * @brief Check the ADC value against the configured threshholds and trigger E-stop if it exceeds them
  *
- * @param[in] handle Pointer to ADS1015 handle
+ * @param[in] value ADC value to check
  *
  * @return
  *    - ESP_OK: Success
- *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer)
- *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
-esp_err_t ads1015_start_conversion(ads1015_handle_t *handle);
+esp_err_t ads1015_check_current(int16_t value);
 
 /**
  * @brief Read one or more registers from the ADS1015
