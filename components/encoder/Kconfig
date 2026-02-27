@@ -1,0 +1,76 @@
+menu "Encoder Configuration"
+
+    config ENCODER_GLITCH_FILTER
+        int "Encoder Glitch Filter"
+        range 0 2147483647
+        default 1000
+        help 
+            Pulses shorter than X nanoseconds are ignored.
+
+    menu "Encoder 0"
+        config ENCODER_0_P0_PIN
+            int "Encoder P0 GPIO Pin"
+            range 0 39
+            default 12
+        config ENCODER_0_P1_PIN
+            int "Encoder P1 GPIO Pin"
+            range 0 39
+            default 13
+        
+        config ENCODER_0_RESOLUTION
+            int "Encoder Resolution"
+            default 20
+            help 
+                Number of slots in the encoder wheel. 
+        
+        config ENCODER_0_LIMB_GEAR_RATIO_X
+            int "Encoder Gear Ratio Numerator(X)"
+            range 1 2147483647
+            default 20
+            help 
+                For every X rotations of the encoder wheel, the limb it controls rotates Y.
+
+        config ENCODER_0_LIMB_GEAR_RATIO_Y
+            int "Encoder Gear Ratio Denominator(Y)"
+            range 1 2147483647
+            default 1
+            help 
+                For every X rotations of the encoder wheel, the limb it controls rotates Y.
+
+        config ENCODER_0_LIMB_REFERENCE
+            int "Encoder Limb End Stop Angle"
+            default 0
+            help 
+                The angle of the limb at which the end stop is triggered
+
+        config ENCODER_0_ANGLE_INVERT
+            int "Encoder Angle Invert"
+            default 0
+            range 0 1
+            help 
+                Flip sign of angles and counts used with this encoder
+
+        config ENCODER_0_LIMIT_LOW
+            int "Encoder Expected Lowest Count Value"
+            default -32767
+            help
+                Used by the pulse counter to suspect if an encoder has drifted at the 
+                limits of its motion. If the count of the encoder goes past this limit, 
+                a warning is raised to the controller that something has gone wrong.
+                If this limit is not set, it will default to being so small it should not 
+                ever raise this warning. This value should be negative.
+        config ENCODER_0_LIMIT_HIGH
+            int "Encoder Expected Highest Count Value"
+            default 32767
+            help
+                Used by the pulse counter to suspect if an encoder has drifted at the 
+                limits of its motion. If the count of the encoder goes past this limit, 
+                a warning is raised.
+                If this limit is not set, it will default to being so large it should not 
+                ever raise this warning. This value should be positive.
+
+        
+    endmenu
+
+		
+endmenu

@@ -1,5 +1,11 @@
 #include "esp_err.h"
 
+#include "driver/pulse_cnt.h"
+#include "driver/gpio.h"
+
+#define ENCODER_LOW_LIMIT INT32_MIN
+#define ENCODER_HIGH_LIMIT INT32_MAX
+
 typedef struct {
     int P0_pin ;
     int P1_pin ;
@@ -8,11 +14,18 @@ typedef struct {
     float gear_ratio ; /**< For every X number of rotations of the encoder wheel, the limb it controls moves once */
     float limb_default ; /**< Angle at which the limb hits the end stop switch */
     int invert_angle ; /**< Boolean flip sign of angle and count measurements */
+    int lim_low ;
+    int lim_high ;
 } encoder_config_t ;
 
 typedef struct {
     pcnt_unit_handle_t pcnt_unit ; /**< specific internal PCNT hardware unit  */
 } encoder_handle_t ;
+
+typedef enum {
+    STATIC_WATCH_POINT, /**< Events are called when the raw count reaches this point */
+    INCREMENTAL_WATCH_POINT /**< Events are called when the raw count increments by this amount every time */
+} encoder_watch_point_t ;
 
 /**
  * @brief Initialize an encoder
@@ -24,8 +37,7 @@ typedef struct {
  *
  * @return
  *    - ESP_OK: Success
- *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer or invalid
- * frequency)
+ *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer)
  *    - ESP_ERR_*: Other ESP-IDF error codes
  */
 esp_err_t encoder_init(encoder_handle_t *handle, encoder_config_t *config) ;
@@ -39,8 +51,7 @@ esp_err_t encoder_init(encoder_handle_t *handle, encoder_config_t *config) ;
  *
  * @return
  *    - ESP_OK: Success
- *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer or invalid
- * frequency)
+ *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer)
  *    - ESP_ERR_*: Other ESP-IDF error codes
  */
 esp_err_t encoder_start(encoder_handle_t *handle) ;
@@ -56,8 +67,7 @@ esp_err_t encoder_start(encoder_handle_t *handle) ;
  *
  * @return
  *    - ESP_OK: Success
- *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer or invalid
- * frequency)
+ *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer)
  *    - ESP_ERR_*: Other ESP-IDF error codes
  */
 esp_err_t encoder_get_raw_count(encoder_handle_t *handle,
@@ -73,8 +83,7 @@ esp_err_t encoder_get_raw_count(encoder_handle_t *handle,
  *
  * @return
  *    - ESP_OK: Success
- *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer or invalid
- * frequency)
+ *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer)
  *    - ESP_ERR_*: Other ESP-IDF error codes
  */
 esp_err_t encoder_clear_count(encoder_handle_t *handle) ;
@@ -92,8 +101,7 @@ esp_err_t encoder_clear_count(encoder_handle_t *handle) ;
  *
  * @return
  *    - ESP_OK: Success
- *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer or invalid
- * frequency)
+ *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer)
  *    - ESP_ERR_*: Other ESP-IDF error codes
  */
 esp_err_t encoder_get_wheel_angle(encoder_handle_t *handle, 
@@ -113,31 +121,36 @@ esp_err_t encoder_get_wheel_angle(encoder_handle_t *handle,
  *
  * @return
  *    - ESP_OK: Success
- *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer or invalid
- * frequency)
+ *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer)
  *    - ESP_ERR_*: Other ESP-IDF error codes
  */                                  
 esp_err_t encoder_get_limb_angle(encoder_handle_t *handle,
                                     encoder_config_t *config, float *limb_angle) ;
 
-/**
- * 
- * TODO TODO TODO TODO TODO TODO TODO TODO TODO
- * 
- * @brief register function callback on encoder
- *
- * When the encoder reaches a speicfic pulse count, the function callback defined 
- * here will be executed as an ISR.
- *
- * @param[out] handle Pointer to encoder handle structure
- *
- * @return
- *    - ESP_OK: Success
- *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer or invalid
- * frequency)
- *    - ESP_ERR_*: Other ESP-IDF error codes
- */
-esp_err_t encoder_register_callback(encoder_handle_t *handle
-                                    ) ; //TODO
+// /**
+//  * 
+//  * TODO TODO TODO TODO TODO TODO TODO TODO TODO
+//  * 
+//  * @brief register function callback on encoder
+//  *
+//  * Callbacks are ran in an ISR context. All callbacks are called at EVERY watch point. 
+//  * Watch points must be set using the encoder_register_watchpoint() function. This function must be called while the encoder is disabled.
+//  *
+//  * @param[out] handle Pointer to encoder handle structure
+//  * @param[in] callback Function point to be called
+//  *
+//  * @return
+//  *    - ESP_OK: Success
+//  *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer)
+//  *    - ESP_ERR_*: Other ESP-IDF error codes
+//  */
+// esp_err_t encoder_register_callback(encoder_handle_t *handle,
+//                                     void* callback) ;
+// esp_err_t encoder_deregister_callback(encoder_handle_t *handle,
+//                                     void* callback) ;
 
+// esp_err_t encoder_register_watchpoint(encoder_handle_t *handle,
+//                                     encoder_watch_point_t type, int watch_point) ;
+// esp_err_t encoder_deregister_watchpoint(encoder_handle_t *handle,
+//                                     encoder_watch_point_t type, int watch_point) ;
 

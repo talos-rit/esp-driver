@@ -2,11 +2,11 @@ menu "Encoder Test Configuration"
 
     config ENCODER_P0_TEST_PIN
         int "Test Encoder P0 GPIO Pin"
-        default 21
+        default 13
 
     config ENCODER_P1_TEST_PIN
         int "Test Encoder P1 GPIO Pin"
-        default 22
+        default 12
 
 
 endmenu
