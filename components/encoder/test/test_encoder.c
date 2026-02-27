@@ -7,7 +7,7 @@ TEST_GROUP(ENCODER) ;
 static encoder_handle_t handle ;
 static encoder_config_t config = {
         .P0_pin = CONFIG_ENCODER_P0_TEST_PIN ,
-        .P1_pin = CONFIG_ENCODER_P0_TEST_PIN ,
+        .P1_pin = CONFIG_ENCODER_P1_TEST_PIN ,
         .glitch_filter_ns = CONFIG_ENCODER_GLITCH_FILTER ,
         .resolution = CONFIG_ENCODER_0_RESOLUTION ,
         .gear_ratio = (float)CONFIG_ENCODER_0_LIMB_GEAR_RATIO_X / (float)CONFIG_ENCODER_0_LIMB_GEAR_RATIO_Y ,

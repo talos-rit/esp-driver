@@ -24,7 +24,7 @@ esp_err_t encoder_init(encoder_handle_t *handle, encoder_config_t *config)
 
     ESP_LOGI(TAG, "set glitch filter");
     pcnt_glitch_filter_config_t filter_config = {
-        .max_glitch_ns = config->resolution,
+        .max_glitch_ns = config->glitch_filter_ns,
     };
     ret = pcnt_unit_set_glitch_filter(handle->pcnt_unit, &filter_config);
     if (ret != ESP_OK) {
