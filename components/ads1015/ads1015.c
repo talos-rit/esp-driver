@@ -28,7 +28,7 @@ static void IRAM_ATTR ads1015_isr(void *arg){
 void adc_task(void *arg){
     ads1015_handle_t *handle = (ads1015_handle_t *)arg;
     uint16_t config_reg = handle->config_reg | (1 << ADS1015_OS_BIT); // Modify so that writing will start conversions
-    bool mux_state = true;
+    bool mux_state = true; // Differential input to read (true = A2-A3, false = A0-A1)
 
     ads1015_write_register(handle, ADS1015_CONFIG, config_reg); // Start conversions
     while (1) {
@@ -39,7 +39,7 @@ void adc_task(void *arg){
         uint16_t raw;
         if (ads1015_read_register(handle, ADS1015_CONVERSION, &raw) == ESP_OK){
             int16_t value = ((int16_t)raw) >> 4;
-            ads1015_check_current(value);
+            ads1015_check_current(value, mux_state);
         }
 
         // Switch MUX inputs and start next conversion
@@ -68,15 +68,15 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
     ESP_ERROR_CHECK(i2c_master_bus_add_device(config->bus_handle, &dev_config, &handle->dev_handle));
 
     // Set comparator threshold registers for RDY mode
-    ESP_ERROR_CHECK(ads1015_write_register(handle, ADS1015_HIGH_THRESH, 0x8000));
-    ESP_ERROR_CHECK(ads1015_write_register(handle, ADS1015_LOW_THRESH, 0x0000));
+    ESP_ERROR_CHECK(ads1015_write_register(handle, ADS1015_HIGH_THRESH_REG, 0x8000));
+    ESP_ERROR_CHECK(ads1015_write_register(handle, ADS1015_LOW_THRESH_REG, 0x0000));
 
     // Write config register
     uint16_t config_reg = ads1015_build_config(
         ADS1015_MUX_AIN0_AIN1,
         ADS1015_PGA_4_096V,
         ADS1015_MODE_SINGLESHOT,
-        ADS1015_DR_3300SPS,
+        ADS1015_DR_250SPS,
         ADS1015_COMP_TRADITIONAL,
         ADS1015_COMP_ACTIVE_LOW,
         ADS1015_COMP_NON_LATCHING,
@@ -113,9 +113,10 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
     return ESP_OK;
 }
 
-esp_err_t ads1015_check_current(int16_t value){
-    if (value >= CONFIG_ADS_HIGH_THRESH || value <= CONFIG_ADS_LOW_THRESH){
-        ESP_LOGW(TAG, "Threshhold exceeded");
+esp_err_t ads1015_check_current(int16_t value, bool mux_state){
+    if (value >= CONFIG_ADS1015_HIGH_THRESH || value <= CONFIG_ADS1015_LOW_THRESH){
+        ESP_LOGW(TAG, "Threshhold exceeded: %i (mux: %s)", value, (mux_state ? ("A2-A3")
+                          : ("A0-A1")));
         // Trigger E-stop
     }
     return ESP_OK;

@@ -26,8 +26,8 @@
 typedef enum {
     ADS1015_CONVERSION = 0x00,
     ADS1015_CONFIG = 0x01,
-    ADS1015_LOW_THRESH = 0x02,
-    ADS1015_HIGH_THRESH = 0x03,
+    ADS1015_LOW_THRESH_REG = 0x02,
+    ADS1015_HIGH_THRESH_REG = 0x03,
 } ads1015_register_t;
 
 /**
@@ -168,7 +168,7 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config);
  * @return
  *    - ESP_OK: Success
  */
-esp_err_t ads1015_check_current(int16_t value);
+esp_err_t ads1015_check_current(int16_t value, bool mux_state);
 
 /**
  * @brief Read one or more registers from the ADS1015

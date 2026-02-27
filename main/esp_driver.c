@@ -20,7 +20,7 @@ void app_main(void) {
 
   ads1015_handle_t ads;
   ads1015_config_t ads_config = {
-      .i2c_addr = CONFIG_ADS_ADDRESS,
+      .i2c_addr = CONFIG_ADS1015_ADDRESS,
       .i2c_speed_hz = 400000,
       .alert_gpio = GPIO_NUM_21,
       .bus_handle = bus.handle,
@@ -48,4 +48,9 @@ void app_main(void) {
   vTaskDelay(1000 / portTICK_PERIOD_MS);
   motorhat_set_motor_speed(&motorhat, MOTORHAT_MOTOR1,
                            MOTORHAT_DIRECTION_RELEASE);
+
+  while(1) {
+    vTaskDelay(pdMS_TO_TICKS(10000));
+    ESP_LOGI(TAG, "main process running...");
+  }
 }
