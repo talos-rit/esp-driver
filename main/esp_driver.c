@@ -18,12 +18,20 @@ void app_main(void) {
   };
   ESP_ERROR_CHECK(i2c_bus_init(&bus, &bus_config));
 
+  i2c_bus_t adc_bus;
+  i2c_bus_config_t adc_bus_config = {
+      .port = I2C_NUM_1,
+      .sda_io_num = CONFIG_ADS1015_SDA_PIN,
+      .scl_io_num = CONFIG_ADS1015_SCL_PIN,
+  };
+  ESP_ERROR_CHECK(i2c_bus_init(&adc_bus, &adc_bus_config));
+
   ads1015_handle_t ads;
   ads1015_config_t ads_config = {
       .i2c_addr = CONFIG_ADS1015_ADDRESS,
       .i2c_speed_hz = 400000,
-      .alert_gpio = GPIO_NUM_21,
-      .bus_handle = bus.handle,
+      .rdy_gpio = CONFIG_ADS1015_RDY_PIN,
+      .bus_handle = adc_bus.handle,
   };
   ESP_ERROR_CHECK(ads_init(&ads, &ads_config));
 

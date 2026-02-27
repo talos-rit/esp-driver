@@ -1,13 +1,13 @@
 menu "Talos ESP Driver Configuration"
 	config MOTORHAT_SDA_PIN
 		int "MotorHAT SDA Pin"
-		default 18
+		default 16
 		help
 		  GPIO pin number for MotorHAT SDA line.
 
 	config MOTORHAT_SCL_PIN
 		int "MotorHAT SCL Pin"
-		default 19
+		default 17
 		help
 		  GPIO pin number for MotorHAT SCL line.
 
@@ -22,11 +22,35 @@ menu "Talos ESP Driver Configuration"
 		default 0x60
 		help
 		  I2C address for the MotorHAT device.
+
+  config ADS1015_SDA_PIN
+		int "ADS1015 SDA Pin"
+		default 18
+		help
+		  GPIO pin number for the ADS1015 SDA line.
+
+	config ADS1015_SCL_PIN
+		int "ADS1015 SCL Pin"
+		default 19
+		help
+		  GPIO pin number for the ADS1015 SCL line.
+
+	config ADS1015_I2C_BUS
+		int "ADS1015 I2C Bus Number"
+		default 1
+		help
+		  I2C bus number for ADS1015 communication.
 	
 	config ADS1015_ADDRESS
 		hex "ADS1015 I2C Address"
 		default 0x48
 		help
 		  I2C address for the ADS1015 device.
+
+	config ADS1015_RDY_PIN
+		int "ADS1015 RDY Pin"
+		default 21
+		help
+		  GPIO pin number for the ADS1015 RDY line.
 
 endmenu

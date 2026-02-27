@@ -132,7 +132,7 @@ typedef struct {
     uint8_t i2c_addr;                   /**< I2C device address */
     uint32_t i2c_speed_hz;              /**< I2C bus speed in Hz */
     i2c_master_bus_handle_t bus_handle; /**< I2C master bus handle */
-    gpio_num_t alert_gpio;              /**< GPIO number for ALERT pin */
+    gpio_num_t rdy_gpio;                /**< GPIO number for ALERT pin */
 } ads1015_config_t;
 
 /**

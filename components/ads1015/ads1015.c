@@ -98,13 +98,13 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
     gpio_config_t io_conf = {
         .intr_type = GPIO_INTR_NEGEDGE,
         .mode = GPIO_MODE_INPUT,
-        .pin_bit_mask = 1ULL << config->alert_gpio,
+        .pin_bit_mask = 1ULL << config->rdy_gpio,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
     };
   
     ESP_ERROR_CHECK(gpio_config(&io_conf));
-    ESP_ERROR_CHECK(gpio_isr_handler_add(config->alert_gpio, ads1015_isr, NULL));
+    ESP_ERROR_CHECK(gpio_isr_handler_add(config->rdy_gpio, ads1015_isr, NULL));
     
     xTaskCreate(adc_task, "adc_task", 4096, handle, 10, &adc_task_handle);
 
