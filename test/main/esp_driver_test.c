@@ -9,6 +9,7 @@
     X(I2C_Bus)      \
     X(PCA9685)      \
     X(MotorHAT)     \
+    X(ADS1015)      \
 
 
 #define X(g) static void run_##g(void) { RUN_TEST_GROUP(g); }

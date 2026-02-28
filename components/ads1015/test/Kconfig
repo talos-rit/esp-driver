@@ -1,0 +1,19 @@
+menu "ADS1015 Configuration"
+
+    config ADS1015_TEST_SDA_PIN
+        int "Test I2C SDA GPIO"
+        default 18
+
+    config ADS1015_TEST_SCL_PIN
+        int "Test I2C SCL GPIO"
+        default 19
+        
+    config ADS1015_TEST_I2C_BUS
+        int "Test ADS1015 I2C Bus Number"
+        default 1
+    
+    config ADS1015_TEST_ADDR
+        hex "Test ADS1015 I2C Address"
+        default 0x48
+
+endmenu
