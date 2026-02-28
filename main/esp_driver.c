@@ -5,6 +5,8 @@
 #include "i2c_bus.h"
 #include "motorhat.h"
 #include "nvs_flash.h"
+#include "limit_switch.h"
+
 void app_main(void) {
 
   // Initialize NVS
@@ -16,6 +18,11 @@ void app_main(void) {
   }
 
   ESP_ERROR_CHECK(ret);
+
+  limit_switch_config_t limit_switch_config = {
+    .alert_gpio = CONFIG_LIMIT_SWITCH_PIN,
+  }
+  ESP_ERROR_CHECK(limit_switch_init(&limit_switch_config));
 
   i2c_bus_t bus;
   i2c_bus_config_t bus_config = {

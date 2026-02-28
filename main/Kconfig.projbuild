@@ -45,5 +45,10 @@ menu "Talos ESP Driver Configuration"
 		default "8080"
 		help
 		  Listening port for the server.
+	config LIMIT_SWITCH_PIN
+		int "Limit Switch Pin"
+		default 22
+		help
+		  GPIO pin for limit switch alerts.
 
 endmenu
