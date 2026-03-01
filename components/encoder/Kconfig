@@ -49,26 +49,6 @@ menu "Encoder Configuration"
             range 0 1
             help 
                 Flip sign of angles and counts used with this encoder
-
-        config ENCODER_0_LIMIT_LOW
-            int "Encoder Expected Lowest Count Value"
-            default -32767
-            help
-                Used by the pulse counter to suspect if an encoder has drifted at the 
-                limits of its motion. If the count of the encoder goes past this limit, 
-                a warning is raised to the controller that something has gone wrong.
-                If this limit is not set, it will default to being so small it should not 
-                ever raise this warning. This value should be negative.
-        config ENCODER_0_LIMIT_HIGH
-            int "Encoder Expected Highest Count Value"
-            default 32767
-            help
-                Used by the pulse counter to suspect if an encoder has drifted at the 
-                limits of its motion. If the count of the encoder goes past this limit, 
-                a warning is raised.
-                If this limit is not set, it will default to being so large it should not 
-                ever raise this warning. This value should be positive.
-
         
     endmenu
 

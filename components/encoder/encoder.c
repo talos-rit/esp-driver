@@ -13,8 +13,9 @@ esp_err_t encoder_init(encoder_handle_t *handle, encoder_config_t *config)
 
     ESP_LOGI(TAG, "install pcnt unit");
     pcnt_unit_config_t unit_config = {
-        .high_limit = config->lim_high,
-        .low_limit = config->lim_low
+        .high_limit = ENCODER_HIGH_LIMIT,
+        .low_limit = ENCODER_LOW_LIMIT,
+        .flags.accum_count = 1 // accumulate the count in the event the count goes past limits (count is reset to 0)
     };
 
     esp_err_t ret = pcnt_new_unit(&unit_config, &handle->pcnt_unit);
@@ -81,6 +82,13 @@ esp_err_t encoder_init(encoder_handle_t *handle, encoder_config_t *config)
         return ret;
     }
 
+    ESP_LOGI(TAG, "add limit watch points for count accumulation");
+    int watch_points[] = {ENCODER_LOW_LIMIT, ENCODER_HIGH_LIMIT};
+    for (size_t i = 0; i < sizeof(watch_points) / sizeof(watch_points[0]); i++) {
+        ret = pcnt_unit_add_watch_point(handle->pcnt_unit, watch_points[i]);
+        if (ret != ESP_OK) {return ret;}
+    }
+
     return ESP_OK ;
 }
 
@@ -121,7 +129,7 @@ esp_err_t encoder_clear_count(encoder_handle_t *handle) {
 esp_err_t encoder_get_wheel_angle(encoder_handle_t *handle, encoder_config_t *config, float *wheel_angle) {
     
     int pulse_count = 0;
-    esp_err_t ret = pcnt_unit_get_count(handle->pcnt_unit, &pulse_count);
+    esp_err_t ret = encoder_get_raw_count(handle, &pulse_count);
     if (ret != ESP_OK) {
         return ret;
     }

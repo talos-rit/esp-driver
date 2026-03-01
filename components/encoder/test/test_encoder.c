@@ -12,9 +12,7 @@ static encoder_config_t config = {
         .resolution = CONFIG_ENCODER_0_RESOLUTION ,
         .gear_ratio = (float)CONFIG_ENCODER_0_LIMB_GEAR_RATIO_X / (float)CONFIG_ENCODER_0_LIMB_GEAR_RATIO_Y ,
         .limb_default = CONFIG_ENCODER_0_LIMB_REFERENCE,
-        .invert_angle = CONFIG_ENCODER_0_ANGLE_INVERT,
-        .lim_low = CONFIG_ENCODER_0_LIMIT_LOW,
-        .lim_high = CONFIG_ENCODER_0_LIMIT_HIGH
+        .invert_angle = CONFIG_ENCODER_0_ANGLE_INVERT
     } ;
 
 TEST_SETUP(ENCODER) {
