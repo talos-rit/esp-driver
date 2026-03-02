@@ -1,7 +1,7 @@
 #include "unity.h"
 #include "unity_fixture.h"
 #include "test_menu.h"
-
+#include "driver/gpio.h"
 
 
 // NOTE: Define Groups here, and they will be automatically added to the menu
@@ -25,5 +25,6 @@ static const test_group_t groups[] = {
 
 void app_main(void)
 {
+    ESP_ERROR_CHECK(gpio_install_isr_service(0));
     test_menu_run(groups, sizeof(groups) / sizeof(groups[0]));
 }
