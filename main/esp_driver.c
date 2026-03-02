@@ -1,7 +1,6 @@
 #include "driver_socket.h"
 #include "driver_wifi.h"
 #include "esp_err.h"
-#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "i2c_bus.h"
 #include "motorhat.h"
