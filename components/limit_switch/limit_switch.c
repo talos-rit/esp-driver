@@ -2,7 +2,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 
-#define TAG "LIMIT_SWITCH"
+#define TAG "limit_switch"
 
 static TaskHandle_t limit_switch_task_handle = NULL; 
 
@@ -28,12 +28,12 @@ void limit_switch_task(void *arg){
         // Wait until GPIO interrupt fires
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         
-        ESP_LOGW(TAG,"Limit switch hit!")
+        ESP_LOGW(TAG,"Limit switch hit!");
         // TODO: React to limit switch
     }
 }
 
-esp_err_t limit_switch_init(limit_switch_config_t *config) {
+esp_err_t limit_switch_init(const limit_switch_config_t *config) {
     ESP_LOGI(TAG, "Initializing limit switches...");
 
     if (!config) {
@@ -41,8 +41,6 @@ esp_err_t limit_switch_init(limit_switch_config_t *config) {
     }
 
     // Configure GPIO interrupt service
-    ESP_ERROR_CHECK(gpio_install_isr_service(0));
-
     gpio_config_t io_conf = {
         .intr_type = GPIO_INTR_NEGEDGE,
         .mode = GPIO_MODE_INPUT,
@@ -52,9 +50,10 @@ esp_err_t limit_switch_init(limit_switch_config_t *config) {
     };
   
     ESP_ERROR_CHECK(gpio_config(&io_conf));
-    ESP_ERROR_CHECK(gpio_isr_handler_add(config->rdy_gpio, limit_switch_isr, NULL));
+    ESP_ERROR_CHECK(gpio_isr_handler_add(config->alert_gpio, limit_switch_isr, NULL));
     
-    xTaskCreate(limit_switch_task, "limit_switch_task", 4096, NULL, 10, &limit_switch_task_handle);
+    // Start waiting task
+    xTaskCreate(limit_switch_task, "limit_switch_task", 4096, NULL, 7, &limit_switch_task_handle);
 
     ESP_LOGI(TAG, "limit_switch initialized");
 

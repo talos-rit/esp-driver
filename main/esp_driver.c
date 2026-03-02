@@ -1,13 +1,19 @@
 #include "driver_socket.h"
 #include "driver_wifi.h"
 #include "esp_err.h"
+#include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "i2c_bus.h"
 #include "motorhat.h"
 #include "nvs_flash.h"
 #include "limit_switch.h"
 
+#define TAG "app_main"
+
 void app_main(void) {
+
+  // Install GPIO interrupt service
+  ESP_ERROR_CHECK(gpio_install_isr_service(0));
 
   // Initialize NVS
   esp_err_t ret = nvs_flash_init();
@@ -21,7 +27,7 @@ void app_main(void) {
 
   limit_switch_config_t limit_switch_config = {
     .alert_gpio = CONFIG_LIMIT_SWITCH_PIN,
-  }
+  };
   ESP_ERROR_CHECK(limit_switch_init(&limit_switch_config));
 
   i2c_bus_t bus;
