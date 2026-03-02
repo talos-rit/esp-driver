@@ -52,7 +52,17 @@ menu "Talos ESP Driver Configuration"
 		default 21
 		help
 		  GPIO pin number for the ADS1015 RDY line.
-        config WIFI_SSID
+
+	config ADS1015_DATA_RATE
+		int "ADS1015 Data Rate"
+    range 0 6
+		default 6
+		help
+		  Data rate of ADS1015 in samples per second.
+        0=128SPS, 1=250SPS, 2=490SPS, 3=920SPS,
+        4=1600SPS, 5=2400SPS, 6=3300SPS
+
+  config WIFI_SSID
 		string "WiFi SSID"
 		default "YourSSID"
 		help
@@ -69,6 +79,7 @@ menu "Talos ESP Driver Configuration"
 		default "0.0.0.0"
 		help
 		  Listening IP address for the server.
+  
 	config SERVER_PORT
 		string "Server Port"
 		default "8080"

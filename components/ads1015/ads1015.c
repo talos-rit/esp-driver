@@ -85,7 +85,7 @@ esp_err_t ads1015_init(ads1015_handle_t *handle, const ads1015_config_t *config)
         ADS1015_MUX_AIN0_AIN1,
         ADS1015_PGA_4_096V,
         ADS1015_MODE_SINGLESHOT,
-        ADS1015_DR_250SPS,
+        CONFIG_ADS1015_DATA_RATE,
         ADS1015_COMP_TRADITIONAL,
         ADS1015_COMP_ACTIVE_LOW,
         ADS1015_COMP_NON_LATCHING,
