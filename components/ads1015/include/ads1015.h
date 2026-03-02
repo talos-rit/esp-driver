@@ -158,7 +158,7 @@ typedef struct {
  * frequency)
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
-esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config);
+esp_err_t ads1015_init(ads1015_handle_t *handle, const ads1015_config_t *config);
 
 /**
  * @brief Check the ADC value against the configured threshholds and trigger E-stop if it exceeds them

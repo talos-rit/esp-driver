@@ -52,10 +52,10 @@ void adc_task(void *arg){
     }
 }
 
-esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
+esp_err_t ads1015_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
     ESP_LOGI(TAG, "Initializing ADS1015...");
 
-    if (!handle || !config) {
+    if (handle == NULL || config == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -65,11 +65,20 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
       .scl_speed_hz = config->i2c_speed_hz,
     };
 
-    ESP_ERROR_CHECK(i2c_master_bus_add_device(config->bus_handle, &dev_config, &handle->dev_handle));
+    esp_err_t ret = i2c_master_bus_add_device(config->bus_handle, &dev_config, &handle->dev_handle);
+    if (ret != ESP_OK) {
+      return ret;
+    }
 
     // Set comparator threshold registers for RDY mode
-    ESP_ERROR_CHECK(ads1015_write_register(handle, ADS1015_HIGH_THRESH_REG, 0x8000));
-    ESP_ERROR_CHECK(ads1015_write_register(handle, ADS1015_LOW_THRESH_REG, 0x0000));
+    ret = ads1015_write_register(handle, ADS1015_HIGH_THRESH_REG, 0x8000);
+    if (ret != ESP_OK) {
+      return ret;
+    }
+    ret = ads1015_write_register(handle, ADS1015_LOW_THRESH_REG, 0x0000);
+    if (ret != ESP_OK) {
+      return ret;
+    }
 
     // Write config register
     uint16_t config_reg = ads1015_build_config(
@@ -84,17 +93,14 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
         false // don't conversions immediately
     );
 
-    ESP_ERROR_CHECK(ads1015_write_register(
-      handle, 
-      ADS1015_CONFIG, 
-      config_reg
-    ));
+    ret = ads1015_write_register(handle, ADS1015_CONFIG, config_reg);
+    if (ret != ESP_OK) {
+      return ret;
+    }
 
     handle->config_reg = config_reg;
 
     // Configure alert GPIO and interrupt service
-    ESP_ERROR_CHECK(gpio_install_isr_service(0));
-
     gpio_config_t io_conf = {
         .intr_type = GPIO_INTR_NEGEDGE,
         .mode = GPIO_MODE_INPUT,
@@ -103,9 +109,16 @@ esp_err_t ads_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
     };
   
-    ESP_ERROR_CHECK(gpio_config(&io_conf));
-    ESP_ERROR_CHECK(gpio_isr_handler_add(config->rdy_gpio, ads1015_isr, NULL));
+    ret = gpio_config(&io_conf);
+    if (ret != ESP_OK) {
+      return ret;
+    }
+    ret = gpio_isr_handler_add(config->rdy_gpio, ads1015_isr, NULL);
+    if (ret != ESP_OK) {
+      return ret;
+    }
     
+    // Start waiting task
     xTaskCreate(adc_task, "adc_task", 4096, handle, 10, &adc_task_handle);
 
     ESP_LOGI(TAG, "ADS1015 initialized");

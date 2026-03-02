@@ -13,6 +13,9 @@
 
 void app_main(void) {
 
+  // Install GPIO interrupt service
+  ESP_ERROR_CHECK(gpio_install_isr_service(0));
+
   // Initialize NVS
   esp_err_t ret = nvs_flash_init();
   if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
@@ -46,7 +49,7 @@ void app_main(void) {
       .rdy_gpio = CONFIG_ADS1015_RDY_PIN,
       .bus_handle = adc_bus.handle,
   };
-  ESP_ERROR_CHECK(ads_init(&ads, &ads_config));
+  ESP_ERROR_CHECK(ads1015_init(&ads, &ads_config));
 
   motorhat_handle_t motorhat;
 
