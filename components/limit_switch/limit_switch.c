@@ -44,13 +44,13 @@ esp_err_t limit_switch_init(const limit_switch_config_t *config) {
     gpio_config_t io_conf = {
         .intr_type = GPIO_INTR_NEGEDGE,
         .mode = GPIO_MODE_INPUT,
-        .pin_bit_mask = 1ULL << config->alert_gpio,
+        .pin_bit_mask = 1ULL << config->limit_gpio,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
     };
   
     ESP_ERROR_CHECK(gpio_config(&io_conf));
-    ESP_ERROR_CHECK(gpio_isr_handler_add(config->alert_gpio, limit_switch_isr, NULL));
+    ESP_ERROR_CHECK(gpio_isr_handler_add(config->limit_gpio, limit_switch_isr, NULL));
     
     // Start waiting task
     xTaskCreate(limit_switch_task, "limit_switch_task", 4096, NULL, 7, &limit_switch_task_handle);

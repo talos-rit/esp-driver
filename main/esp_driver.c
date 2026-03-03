@@ -25,7 +25,7 @@ void app_main(void) {
   ESP_ERROR_CHECK(ret);
 
   limit_switch_config_t limit_switch_config = {
-    .alert_gpio = CONFIG_LIMIT_SWITCH_PIN,
+    .limit_gpio = CONFIG_LIMIT_SWITCH_PIN,
   };
   ESP_ERROR_CHECK(limit_switch_init(&limit_switch_config));
 
@@ -74,4 +74,8 @@ void app_main(void) {
   vTaskDelay(1000 / portTICK_PERIOD_MS);
   motorhat_set_motor_speed(&motorhat, MOTORHAT_MOTOR1,
                            MOTORHAT_DIRECTION_RELEASE);
+
+  while(1) {
+    vTaskDelay(pdMS_TO_TICKS(10000));
+  } 
 }

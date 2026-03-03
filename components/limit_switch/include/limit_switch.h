@@ -11,13 +11,13 @@
  * @brief limit_switch configuration structure
  */
 typedef struct {
-    gpio_num_t alert_gpio;                /**< GPIO number for ALERT pin */
+    gpio_num_t limit_gpio;                /**< GPIO number for limit switch pin */
 } limit_switch_config_t;
 
 /**
  * @brief Initialize the limit switch task
  *
- * This function initializes the limit switch task and sets up the alert GPIO.
+ * This function initializes the limit switch task and sets up the limit switch GPIO.
  *
  * @param[in] config Pointer to configuration structure
  *
