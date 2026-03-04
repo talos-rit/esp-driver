@@ -10,6 +10,7 @@
     X(PCA9685)      \
     X(MotorHAT)     \
     X(ENCODER)      \
+    X(ENCODER_INFINITE)\
 
 
 #define X(g) static void run_##g(void) { RUN_TEST_GROUP(g); }
