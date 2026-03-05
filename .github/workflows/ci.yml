@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      IDF_PATH: ${{ github.workspace }}/esp-idf
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git wget flex bison gperf python3 python3-pip python3-venv cmake ninja-build ccache libffi-dev libssl-dev dfu-util libusb-1.0-0
+
+      - name: Install ESP-IDF
+        run: |
+          mkdir -p ${{ github.workspace }}/esp
+          cd ${{ github.workspace }}/esp
+          git clone -b v5.5.3 --recursive https://github.com/espressif/esp-idf.git
+          cd esp-idf
+          ./install.sh esp32
+
+      - name: Build and Test
+        run: |
+          source ${{ github.workspace }}/esp-idf/export.sh
+          idf.py build
+          cd test/
+          idf.py build
+
+      - name: Kconfig Check
+        run: |
+          source ${{ github.workspace }}/esp-idf/export.sh
+          find . -name "Kconfig*" | xargs -r python -m kconfcheck
