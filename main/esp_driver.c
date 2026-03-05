@@ -8,6 +8,7 @@
 #include "motorhat.h"
 #include "ads1015.h"
 #include "nvs_flash.h"
+#include "limit_switch.h"
 
 #define TAG "MAIN"
 
@@ -25,6 +26,11 @@ void app_main(void) {
   }
 
   ESP_ERROR_CHECK(ret);
+
+  limit_switch_config_t limit_switch_config = {
+    .limit_gpio = CONFIG_LIMIT_SWITCH_PIN,
+  };
+  ESP_ERROR_CHECK(limit_switch_init(&limit_switch_config));
 
   i2c_bus_t bus;
   i2c_bus_config_t bus_config = {
@@ -91,6 +97,5 @@ void app_main(void) {
 
   while(1) {
     vTaskDelay(pdMS_TO_TICKS(10000));
-    ESP_LOGI(TAG, "main process running...");
-  }
+  } 
 }
