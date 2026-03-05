@@ -1,13 +1,13 @@
 menu "Talos ESP Driver Configuration"
 	config MOTORHAT_SDA_PIN
 		int "MotorHAT SDA Pin"
-		default 18
+		default 16
 		help
 		  GPIO pin number for MotorHAT SDA line.
 
 	config MOTORHAT_SCL_PIN
 		int "MotorHAT SCL Pin"
-		default 19
+		default 17
 		help
 		  GPIO pin number for MotorHAT SCL line.
 
@@ -23,7 +23,46 @@ menu "Talos ESP Driver Configuration"
 		help
 		  I2C address for the MotorHAT device.
 
-        config WIFI_SSID
+  config ADS1015_SDA_PIN
+		int "ADS1015 SDA Pin"
+		default 18
+		help
+		  GPIO pin number for the ADS1015 SDA line.
+
+	config ADS1015_SCL_PIN
+		int "ADS1015 SCL Pin"
+		default 19
+		help
+		  GPIO pin number for the ADS1015 SCL line.
+
+	config ADS1015_I2C_BUS
+		int "ADS1015 I2C Bus Number"
+		default 1
+		help
+		  I2C bus number for ADS1015 communication.
+	
+	config ADS1015_ADDRESS
+		hex "ADS1015 I2C Address"
+		default 0x48
+		help
+		  I2C address for the ADS1015 device.
+
+	config ADS1015_RDY_PIN
+		int "ADS1015 RDY Pin"
+		default 21
+		help
+		  GPIO pin number for the ADS1015 RDY line.
+
+	config ADS1015_DATA_RATE
+		int "ADS1015 Data Rate"
+    range 0 6
+		default 6
+		help
+		  Data rate of ADS1015 in samples per second.
+        0=128SPS, 1=250SPS, 2=490SPS, 3=920SPS,
+        4=1600SPS, 5=2400SPS, 6=3300SPS
+
+  config WIFI_SSID
 		string "WiFi SSID"
 		default "YourSSID"
 		help
@@ -40,6 +79,7 @@ menu "Talos ESP Driver Configuration"
 		default "0.0.0.0"
 		help
 		  Listening IP address for the server.
+  
 	config SERVER_PORT
 		string "Server Port"
 		default "8080"
