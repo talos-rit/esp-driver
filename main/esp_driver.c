@@ -5,8 +5,8 @@
 #include "freertos/FreeRTOS.h"
 #include "i2c_bus.h"
 
-#include "motorhat.h"
 #include "ads1015.h"
+#include "motorhat.h"
 #include "nvs_flash.h"
 
 #define TAG "MAIN"
@@ -48,6 +48,7 @@ void app_main(void) {
       .i2c_speed_hz = 400000,
       .rdy_gpio = CONFIG_ADS1015_RDY_PIN,
       .bus_handle = adc_bus.handle,
+      .adc_data_rate = CONFIG_ADS1015_DATA_RATE,
   };
   ESP_ERROR_CHECK(ads1015_init(&ads, &ads_config));
 
@@ -89,7 +90,7 @@ void app_main(void) {
   motorhat_set_motor_speed(&motorhat, MOTORHAT_MOTOR1,
                            MOTORHAT_DIRECTION_RELEASE);
 
-  while(1) {
+  while (1) {
     vTaskDelay(pdMS_TO_TICKS(10000));
     ESP_LOGI(TAG, "main process running...");
   }

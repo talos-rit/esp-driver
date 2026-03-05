@@ -133,6 +133,7 @@ typedef struct {
     uint32_t i2c_speed_hz;              /**< I2C bus speed in Hz */
     i2c_master_bus_handle_t bus_handle; /**< I2C master bus handle */
     gpio_num_t rdy_gpio;                /**< GPIO number for ALERT pin */
+    uint8_t adc_data_rate;              /**< Data rate setting for ADC conversions */
 } ads1015_config_t;
 
 /**
