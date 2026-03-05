@@ -9,6 +9,8 @@
     X(I2C_Bus)      \
     X(PCA9685)      \
     X(MotorHAT)     \
+    X(ENCODER)      \
+    X(ENCODER_INFINITE)\
     X(ADS1015)      \
 
 
