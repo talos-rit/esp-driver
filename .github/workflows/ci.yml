@@ -36,4 +36,4 @@ jobs:
         with:
           esp_idf_version: 'v5.5.3'
           target: esp32
-          command: find . -name "Kconfig*" | xargs -r python -m kconfcheck
+          command: 'find . -name "Kconfig*" | xargs -r python -m kconfcheck'

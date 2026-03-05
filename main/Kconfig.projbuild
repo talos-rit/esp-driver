@@ -38,7 +38,7 @@ menu "Talos ESP Driver Configuration"
     config DRIVER_ADS1015_I2C_BUS
         int "ADS1015 I2C Bus Number"
         default 1
-        help
+    help
             I2C bus number for ADS1015 communication.
 
     config DRIVER_ADS1015_ADDRESS
