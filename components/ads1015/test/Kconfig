@@ -7,13 +7,29 @@ menu "ADS1015 Configuration"
     config ADS1015_TEST_SCL_PIN
         int "Test I2C SCL GPIO"
         default 19
-        
+
     config ADS1015_TEST_I2C_BUS
         int "Test ADS1015 I2C Bus Number"
         default 1
-    
+
     config ADS1015_TEST_ADDR
         hex "Test ADS1015 I2C Address"
         default 0x48
+
+    config ADS1015_TEST_RDY_PIN
+        int "ADS1015 RDY Pin"
+        default 21
+        help
+            GPIO pin number for the ADS1015 RDY line.
+
+    config ADS1015_TEST_DATA_RATE
+        int "ADS1015 Data Rate"
+        range 0 6
+        default 6
+        help
+            Data rate of ADS1015 in samples per second.
+            0=128SPS, 1=250SPS, 2=490SPS, 3=920SPS,
+            4=1600SPS, 5=2400SPS, 6=3300SPS
+
 
 endmenu
