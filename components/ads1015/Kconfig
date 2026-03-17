@@ -4,12 +4,12 @@ menu "ADS1015 Configuration"
         int "ADS1015 HIGH THRESH"
         default 100
         help
-          High threshhold for ADS1015 current sensing.
+            High threshhold for ADS1015 current sensing.
 
     config ADS1015_LOW_THRESH
         int "ADS1015 LOW THRESH"
         default -100
         help
-          Low threshhold for ADS1015 current sensing.
+            Low threshhold for ADS1015 current sensing.
 
 endmenu

@@ -10,6 +10,7 @@
     X(PCA9685)      \
     X(MotorHAT)     \
     X(ADS1015)      \
+    X(Driver_WiFi)   \
 
 
 #define X(g) static void run_##g(void) { RUN_TEST_GROUP(g); }
