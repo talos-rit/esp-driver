@@ -12,6 +12,7 @@
     X(ENCODER)      \
     X(ENCODER_INFINITE)\
     X(ADS1015)      \
+    X(Driver_WiFi)   \
 
 
 #define X(g) static void run_##g(void) { RUN_TEST_GROUP(g); }
