@@ -62,6 +62,12 @@ menu "Talos ESP Driver Configuration"
             0=128SPS, 1=250SPS, 2=490SPS, 3=920SPS,
             4=1600SPS, 5=2400SPS, 6=3300SPS
 
+    config DRIVER_LIMIT_SWITCH_PIN
+        int "Limit Switch Pin"
+        default 22
+        help
+            GPIO pin for limit switch alerts.
+
     config DRIVER_WIFI_SSID
         string "WiFi SSID"
         default "YourSSID"

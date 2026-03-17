@@ -6,9 +6,9 @@
 #include "i2c_bus.h"
 
 #include "ads1015.h"
+#include "limit_switch.h"
 #include "motorhat.h"
 #include "nvs_flash.h"
-#include "limit_switch.h"
 
 #define TAG "MAIN"
 
@@ -28,7 +28,7 @@ void app_main(void) {
   ESP_ERROR_CHECK(ret);
 
   limit_switch_config_t limit_switch_config = {
-    .limit_gpio = CONFIG_LIMIT_SWITCH_PIN,
+      .limit_gpio = CONFIG_DRIVER_LIMIT_SWITCH_PIN,
   };
   ESP_ERROR_CHECK(limit_switch_init(&limit_switch_config));
 
@@ -40,20 +40,12 @@ void app_main(void) {
   };
   ESP_ERROR_CHECK(i2c_bus_init(&bus, &bus_config));
 
-  i2c_bus_t adc_bus;
-  i2c_bus_config_t adc_bus_config = {
-      .port = I2C_NUM_1,
-      .sda_io_num = CONFIG_DRIVER_ADS1015_SDA_PIN,
-      .scl_io_num = CONFIG_DRIVER_ADS1015_SCL_PIN,
-  };
-  ESP_ERROR_CHECK(i2c_bus_init(&adc_bus, &adc_bus_config));
-
   ads1015_handle_t ads;
   ads1015_config_t ads_config = {
       .i2c_addr = CONFIG_DRIVER_ADS1015_ADDRESS,
       .i2c_speed_hz = 400000,
       .rdy_gpio = CONFIG_DRIVER_ADS1015_RDY_PIN,
-      .bus_handle = adc_bus.handle,
+      .bus_handle = bus.handle,
       .adc_data_rate = CONFIG_DRIVER_ADS1015_DATA_RATE,
   };
   ESP_ERROR_CHECK(ads1015_init(&ads, &ads_config));
@@ -88,15 +80,9 @@ void app_main(void) {
 
   ESP_ERROR_CHECK(driver_socket_init(&socket_handle, &socket_config));
 
-  motorhat_set_motor_direction(&motorhat, MOTORHAT_MOTOR1,
-                               MOTORHAT_DIRECTION_FORWARD);
-  motorhat_set_motor_speed(&motorhat, MOTORHAT_MOTOR1, 200);
-
-  vTaskDelay(1000 / portTICK_PERIOD_MS);
-  motorhat_set_motor_speed(&motorhat, MOTORHAT_MOTOR1,
-                           MOTORHAT_DIRECTION_RELEASE);
+  int pulse_count;
 
   while (1) {
-    vTaskDelay(pdMS_TO_TICKS(10000));
-  } 
+    esp_err_t err = encoder_get_raw_count(
+  }
 }

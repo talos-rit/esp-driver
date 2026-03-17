@@ -48,7 +48,7 @@ typedef struct {
  * @brief Motor HAT device handle
  */
 typedef struct {
-  pca9685_handle_t *pca9685;
+  pca9685_handle_t pca9685;
 } motorhat_handle_t;
 
 /**
