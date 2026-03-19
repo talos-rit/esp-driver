@@ -16,6 +16,11 @@
 #define ENCODER_GLITCH_FILTER 100 //CONFIG_ENCODER_GLITCH_FILTER
 #define ENCODER_STANDARD_RESOLUTION 20
 
+#include "encoder.h"
+
+#define ENCODER_GLITCH_FILTER 100 //CONFIG_ENCODER_GLITCH_FILTER
+#define ENCODER_STANDARD_RESOLUTION 20
+
 void app_main(void) {
 
   // Install GPIO interrupt service
@@ -73,7 +78,6 @@ void app_main(void) {
               .bus_handle = bus.handle,
           },
   };
-
   ESP_ERROR_CHECK(motorhat_init(&motorhat, &motorhat_config));
 
   driver_wifi_config_t wifi_config = {
@@ -92,6 +96,91 @@ void app_main(void) {
   };
 
   ESP_ERROR_CHECK(driver_socket_init(&socket_handle, &socket_config));
+  encoder_handle_t enc_axis1 ;
+  encoder_config_t enc_axis1_cfg = {
+    .P0_pin = 16,
+    .P1_pin = 17,
+    .glitch_filter_ns = ENCODER_GLITCH_FILTER,
+    .gear_ratio = 635.5, //120:24 gears, 127.1:1 motor
+    .limb_default = 0,
+    .resolution = ENCODER_STANDARD_RESOLUTION,
+    .invert_angle = 0
+  };
+  ESP_ERROR_CHECK(encoder_init(&enc_axis1, &enc_axis1_cfg));
+
+  encoder_handle_t enc_axis2 ;
+  encoder_config_t enc_axis2_cfg = {
+    .P0_pin = 34,
+    .P1_pin = 35,
+    .glitch_filter_ns = ENCODER_GLITCH_FILTER,
+    .gear_ratio = 457.56, //72:20 gears, 127.1:1 motor
+    .limb_default = 0,
+    .resolution = ENCODER_STANDARD_RESOLUTION,
+    .invert_angle = 0
+  };
+  ESP_ERROR_CHECK(encoder_init(&enc_axis2, &enc_axis2_cfg));
+
+  encoder_handle_t enc_axis3 ;
+  encoder_config_t enc_axis3_cfg = {
+    .P0_pin = 32,
+    .P1_pin = 33,
+    .glitch_filter_ns = ENCODER_GLITCH_FILTER,
+    .gear_ratio = 457.65, //72:20 gears, 127.1:1 motor
+    .limb_default = 0,
+    .resolution = ENCODER_STANDARD_RESOLUTION,
+    .invert_angle = 0
+  };
+  ESP_ERROR_CHECK(encoder_init(&enc_axis3, &enc_axis3_cfg));
+
+  encoder_handle_t enc_axis4 ;
+  encoder_config_t enc_axis4_cfg = {
+    .P0_pin = 25,
+    .P1_pin = 26,
+    .glitch_filter_ns = ENCODER_GLITCH_FILTER,
+    .gear_ratio = 125.541, //23:12 gears, 65.5:1 motor
+    .limb_default = 0,
+    .resolution = ENCODER_STANDARD_RESOLUTION,
+    .invert_angle = 0
+  };
+  ESP_ERROR_CHECK(encoder_init(&enc_axis4, &enc_axis4_cfg));
+
+  encoder_handle_t enc_axis5 ;
+  encoder_config_t enc_axis5_cfg = {
+    .P0_pin = 27,
+    .P1_pin = 14,
+    .glitch_filter_ns = ENCODER_GLITCH_FILTER,
+    .gear_ratio = 125.541, //23:12 gears, 65.5:1 motor
+    .limb_default = 0,
+    .resolution = ENCODER_STANDARD_RESOLUTION,
+    .invert_angle = 0
+  };
+  ESP_ERROR_CHECK(encoder_init(&enc_axis5, &enc_axis5_cfg));
+
+  // // Gripper is commented out because our specific application of this robot has no need of the gripper motor.
+  // // If in the future it is, make sure to double check the schematic reference for the pins and motor ratio.
+  // encoder_handle_t enc_gripper ;
+  // encoder_config_t enc_gripper_cfg = {
+  //   .P0_pin = 13,
+  //   .P1_pin = 4,
+  //   .glitch_filter_ns = ENCODER_GLITCH_FILTER,
+  //   .gear_ratio = 19.5,
+  //   .limb_default = 0,
+  //   .resolution = ENCODER_STANDARD_RESOLUTION,
+  //   .invert_angle = 0
+  // };
+  // ESP_ERROR_CHECK(encoder_init(&enc_gripper, &enc_gripper_cfg));
+
+ESP_ERROR_CHECK(encoder_start(&enc_axis1));
+ESP_ERROR_CHECK(encoder_start(&enc_axis2));
+// ESP_ERROR_CHECK(encoder_start(&enc_axis3));
+// ESP_ERROR_CHECK(encoder_start(&enc_axis4));
+// ESP_ERROR_CHECK(encoder_start(&enc_axis5));
+
+
+
+
+
+
   encoder_handle_t enc_axis1 ;
   encoder_config_t enc_axis1_cfg = {
     .P0_pin = 16,
