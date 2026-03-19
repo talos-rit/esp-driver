@@ -10,7 +10,6 @@
     X(PCA9685)      \
     X(MotorHAT)     \
     X(ENCODER)      \
-    X(ENCODER_INFINITE)\
     X(ADS1015)      \
     X(Driver_WiFi)   \
 
