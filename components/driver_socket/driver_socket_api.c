@@ -60,21 +60,25 @@ esp_err_t driver_socket_api_process(uint8_t *buffer, size_t buffer_size) {
     case DRIVER_SOCKET_API_CMD_ID_POLAR_PAN:
       driver_socket_api_polar_pan_payload_t *polar_pan_payload = (driver_socket_api_polar_pan_payload_t *)&wrapper->payload_head;
       driver_socket_api_polar_pan_payload_swap_endianess(polar_pan_payload);
+      // TODO add actual motor control
       ESP_LOGI(TAG, "Processing POLAR_PAN command: delta_azimuth=%d, delta_altitude=%d, delay_ms=%d, time_ms=%d",
                polar_pan_payload->delta_azimuth, polar_pan_payload->delta_altitude, polar_pan_payload->delay_ms, polar_pan_payload->time_ms);
       break;
     case DRIVER_SOCKET_API_CMD_ID_HOME:
       driver_socket_api_home_payload_t *home_payload = (driver_socket_api_home_payload_t *)&wrapper->payload_head;
       driver_socket_api_home_payload_swap_endianess(home_payload);
+      // TODO add actual motor control
       ESP_LOGI(TAG, "Processing HOME command: delay_ms=%d", home_payload->delay_ms);
       break;
     case DRIVER_SOCKET_API_CMD_ID_POLAR_PAN_START:
       driver_socket_api_polar_pan_start_payload_t *polar_pan_start_payload = (driver_socket_api_polar_pan_start_payload_t *)&wrapper->payload_head;
       // No endianess swap needed for int8_t fields
+      // TODO add actual motor control
       ESP_LOGI(TAG, "Processing POLAR_PAN_START command: delta_azimuth=%d, delta_altitude=%d",
                polar_pan_start_payload->delta_azimuth, polar_pan_start_payload->delta_altitude);
       break;
     case DRIVER_SOCKET_API_CMD_ID_POLAR_PAN_STOP:
+      // TODO add actual motor control
       ESP_LOGI(TAG, "Processing POLAR_PAN_STOP command");
       break;
     default:

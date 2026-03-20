@@ -7,8 +7,12 @@
 
 #include "ads1015.h"
 #include "limit_switch.h"
+#include "encoder.h"
 #include "motorhat.h"
+#include "signal_bus.h"
 #include "nvs_flash.h"
+
+#include "driver/gpio.h"
 
 #define TAG "MAIN"
 
@@ -17,6 +21,9 @@ void app_main(void) {
   // Install GPIO interrupt service
   ESP_ERROR_CHECK(gpio_install_isr_service(0));
 
+  // Initialize signal bus
+  signal_bus_init();
+
   // Initialize NVS
   esp_err_t ret = nvs_flash_init();
   if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
@@ -24,14 +31,10 @@ void app_main(void) {
     ESP_ERROR_CHECK(nvs_flash_erase());
     ret = nvs_flash_init();
   }
-
   ESP_ERROR_CHECK(ret);
 
-  limit_switch_config_t limit_switch_config = {
-      .limit_gpio = CONFIG_DRIVER_LIMIT_SWITCH_PIN,
-  };
-  ESP_ERROR_CHECK(limit_switch_init(&limit_switch_config));
 
+  // Initialize I2C bus
   i2c_bus_t bus;
   i2c_bus_config_t bus_config = {
       .port = I2C_NUM_0,
@@ -40,6 +43,15 @@ void app_main(void) {
   };
   ESP_ERROR_CHECK(i2c_bus_init(&bus, &bus_config));
 
+
+  // Initialize limit switches
+  limit_switch_config_t limit_switch_config = {
+      .limit_gpio = CONFIG_DRIVER_LIMIT_SWITCH_PIN,
+  };
+  ESP_ERROR_CHECK(limit_switch_init(&limit_switch_config, g_motor_events));
+
+
+  // Initialize current sensing
   ads1015_handle_t ads;
   ads1015_config_t ads_config = {
       .i2c_addr = CONFIG_DRIVER_ADS1015_ADDRESS,
@@ -48,10 +60,23 @@ void app_main(void) {
       .bus_handle = bus.handle,
       .adc_data_rate = CONFIG_DRIVER_ADS1015_DATA_RATE,
   };
-  ESP_ERROR_CHECK(ads1015_init(&ads, &ads_config));
+  // ESP_ERROR_CHECK(ads1015_init(&ads, &ads_config));
 
+
+  // Initialize encoders
+  encoder_handle_t encoder;
+  encoder_config_t encoder_config = {
+      .P0_pin = CONFIG_ENCODER_0_P0_PIN,
+      .P1_pin = CONFIG_ENCODER_0_P1_PIN,
+      .resolution = CONFIG_ENCODER_0_RESOLUTION,
+      .glitch_filter_ns = CONFIG_ENCODER_GLITCH_FILTER,
+      .invert_angle = CONFIG_ENCODER_0_ANGLE_INVERT,
+  };
+  ESP_ERROR_CHECK(encoder_init(&encoder, &encoder_config));
+
+
+  // Initialize motor controller
   motorhat_handle_t motorhat;
-
   motorhat_config_t motorhat_config = {
       .pca9685_config =
           {
@@ -61,9 +86,10 @@ void app_main(void) {
               .bus_handle = bus.handle,
           },
   };
+  // ESP_ERROR_CHECK(motorhat_init(&motorhat, &motorhat_config));
 
-  ESP_ERROR_CHECK(motorhat_init(&motorhat, &motorhat_config));
 
+  // Initialize Wi-Fi and socket connection
   driver_wifi_config_t wifi_config = {
       .ssid = CONFIG_DRIVER_WIFI_SSID,
       .password = CONFIG_DRIVER_WIFI_PASSWORD,
@@ -80,9 +106,23 @@ void app_main(void) {
 
   ESP_ERROR_CHECK(driver_socket_init(&socket_handle, &socket_config));
 
+
   int pulse_count;
 
   while (1) {
-    esp_err_t err = encoder_get_raw_count(
+    esp_err_t err = encoder_get_raw_count(&encoder, &pulse_count);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "Failed to get encoder count: %s", esp_err_to_name(err));
+    }
+
+    // connect limit switches to stop motor in motorhat control
+
+    // overcurrent estop
+
+    // connect socket commands to motorhat control
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    ESP_LOGI(TAG, "Event group: %d", xEventGroupGetBits(g_motor_events));
   }
 }

@@ -25,6 +25,6 @@ typedef struct {
  *    - ESP_OK: Success
  *    - ESP_ERR_INVALID_ARG: Invalid argument
  */
-esp_err_t limit_switch_init(const limit_switch_config_t *config);
+esp_err_t limit_switch_init(const limit_switch_config_t *config, EventGroupHandle_t events);
 
 #endif // _LIMIT_SWITCH_H
