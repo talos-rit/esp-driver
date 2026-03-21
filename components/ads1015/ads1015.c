@@ -3,6 +3,7 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "signal_bus.h"
 
 #define TAG "ADS1015"
 
@@ -28,6 +29,7 @@ static void IRAM_ATTR ads1015_isr(void *arg){
 void adc_task(void *arg){
     ads1015_handle_t *handle = (ads1015_handle_t *)arg;
     uint16_t config_reg = handle->config_reg | (1 << ADS1015_OS_BIT); // Modify so that writing will start conversions
+    EventGroupHandle_t events = handle->events;
     bool mux_state = true; // Differential input to read (true = A2-A3, false = A0-A1)
 
     ads1015_write_register(handle, ADS1015_CONFIG, config_reg); // Start conversions
@@ -39,7 +41,9 @@ void adc_task(void *arg){
         uint16_t raw;
         if (ads1015_read_register(handle, ADS1015_CONVERSION, &raw) == ESP_OK){
             int16_t value = ((int16_t)raw) >> 4;
-            ads1015_check_current(value, mux_state);
+            if (value >= CONFIG_ADS1015_HIGH_THRESH || value <= CONFIG_ADS1015_LOW_THRESH){
+                xEventGroupSetBits(events, ESTOP_OVERCURRENT);
+            }
         }
 
         // Switch MUX inputs and start next conversion
@@ -52,9 +56,7 @@ void adc_task(void *arg){
     }
 }
 
-esp_err_t ads1015_init(ads1015_handle_t *handle, const ads1015_config_t *config) {
-    ESP_LOGI(TAG, "Initializing ADS1015...");
-
+esp_err_t ads1015_init(ads1015_handle_t *handle, const ads1015_config_t *config, EventGroupHandle_t events) {
     if (handle == NULL || config == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -99,6 +101,7 @@ esp_err_t ads1015_init(ads1015_handle_t *handle, const ads1015_config_t *config)
     }
 
     handle->config_reg = config_reg;
+    handle->events = events;
 
     // Configure alert GPIO and interrupt service
     gpio_config_t io_conf = {
@@ -123,15 +126,6 @@ esp_err_t ads1015_init(ads1015_handle_t *handle, const ads1015_config_t *config)
 
     ESP_LOGI(TAG, "ADS1015 initialized");
 
-    return ESP_OK;
-}
-
-esp_err_t ads1015_check_current(int16_t value, bool mux_state){
-    if (value >= CONFIG_ADS1015_HIGH_THRESH || value <= CONFIG_ADS1015_LOW_THRESH){
-        ESP_LOGW(TAG, "Threshhold exceeded: %i (mux: %s)", value, (mux_state ? ("A2-A3")
-                          : ("A0-A1")));
-        // Trigger E-stop
-    }
     return ESP_OK;
 }
 

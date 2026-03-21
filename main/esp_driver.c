@@ -60,7 +60,7 @@ void app_main(void) {
       .bus_handle = bus.handle,
       .adc_data_rate = CONFIG_DRIVER_ADS1015_DATA_RATE,
   };
-  // ESP_ERROR_CHECK(ads1015_init(&ads, &ads_config));
+  ESP_ERROR_CHECK(ads1015_init(&ads, &ads_config, g_motor_events));
 
 
   // Initialize encoders
@@ -124,5 +124,6 @@ void app_main(void) {
     vTaskDelay(pdMS_TO_TICKS(1000));
 
     ESP_LOGI(TAG, "Event group: %d", xEventGroupGetBits(g_motor_events));
+    xEventGroupClearBits(g_motor_events, FAULT_ANY);
   }
 }
