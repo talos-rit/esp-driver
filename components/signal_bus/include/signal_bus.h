@@ -5,14 +5,14 @@
 #include "freertos/event_groups.h"
 #include "esp_err.h"
 
-// One bit per motor limit switch
-#define LIMIT_MOTOR_0   (1 << 0)
-#define LIMIT_MOTOR_1   (1 << 1)
-#define LIMIT_MOTOR_2   (1 << 2)
-#define LIMIT_MOTOR_3   (1 << 3)
-#define LIMIT_MOTOR_4   (1 << 4)
-#define LIMIT_MOTOR_5   (1 << 5)
-#define LIMIT_MOTOR_6   (1 << 6)
+// Motor limit switch and fault event bits
+#define LIMIT_MOTOR_0     (1 << 0)
+#define LIMIT_MOTOR_1     (1 << 1)
+#define LIMIT_MOTOR_2     (1 << 2)
+#define LIMIT_MOTOR_3     (1 << 3)
+#define LIMIT_MOTOR_4     (1 << 4)
+#define LIMIT_MOTOR_5     (1 << 5)
+#define LIMIT_MOTOR_6     (1 << 6)
 #define ESTOP_OVERCURRENT (1 << 7)
 
 #define ESTOP_ANY       (ESTOP_OVERCURRENT)

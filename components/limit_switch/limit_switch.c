@@ -5,8 +5,6 @@
 
 #define TAG "limit_switch"
 
-static TaskHandle_t limit_switch_task_handle = NULL; 
-
 static void IRAM_ATTR limit_switch_isr(void *arg){
     BaseType_t higher_priority_task_woken = pdFALSE;
 

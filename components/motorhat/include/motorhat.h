@@ -3,6 +3,8 @@
 
 #include "pca9685.h"
 #include <stdint.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 
 #define DEFAULT_FREQUENCY_HZ 1526.0f
 
@@ -48,7 +50,9 @@ typedef struct {
  * @brief Motor HAT device handle
  */
 typedef struct {
-  pca9685_handle_t pca9685;
+  pca9685_handle_t pca9685;   /**< Handle for the underlying PCA9685 controller */
+  EventGroupHandle_t events;  /**< Event group handle for motor fault signaling */
+  EventBits_t stop_bits;      /**< Which bits trigger motor stop */
 } motorhat_handle_t;
 
 /**
@@ -76,6 +80,7 @@ static const motorhat_motor_channels_t motor_channels[MOTORHAT_NUM_MOTORS] = {
  *
  * @param[out] handle Pointer to Motor HAT handle structure
  * @param[in] config Pointer to configuration structure containing PCA9685 settings
+ * @param[in] events Event group handle for signaling motor faults
  *
  * @return
  *    - ESP_OK: Success
@@ -85,8 +90,7 @@ static const motorhat_motor_channels_t motor_channels[MOTORHAT_NUM_MOTORS] = {
  * @note The handle->pca9685 pointer must be allocated and point to a valid
  *       pca9685_handle_t structure before calling this function
  */
-esp_err_t motorhat_init(motorhat_handle_t *handle,
-                        const motorhat_config_t *config);
+esp_err_t motorhat_init(motorhat_handle_t *handle, const motorhat_config_t *config, EventGroupHandle_t events);
 
 /**
  * @brief Set motor speed
@@ -101,6 +105,7 @@ esp_err_t motorhat_init(motorhat_handle_t *handle,
  * @return
  *    - ESP_OK: Success
  *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL handle, invalid motor, or speed > 4096)
+ *    - ESP_ERR_INVALID_STATE: Motor is in fault state (stop bits set)
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  *
  * @note For typical usage with 0-255 speed range, scale your value:
@@ -126,6 +131,7 @@ esp_err_t motorhat_set_motor_speed(motorhat_handle_t *handle,
  * @return
  *    - ESP_OK: Success
  *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL handle, invalid motor, or invalid direction)
+ *    - ESP_ERR_INVALID_STATE: Motor is in fault state (stop bits set)
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  *
  * @note Setting direction does not affect speed. Set speed separately using
@@ -134,5 +140,19 @@ esp_err_t motorhat_set_motor_speed(motorhat_handle_t *handle,
 esp_err_t motorhat_set_motor_direction(motorhat_handle_t *handle,
                                        motorhat_motor_t motor,
                                        motorhat_direction_t direction);
+
+/**
+ * @brief Emergency stop all motors
+ *
+ * Immediately stops all motors and releases control signals.
+ *
+ * @param[in] handle Pointer to Motor HAT handle
+ *
+ * @return
+ *    - ESP_OK: Success
+ *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL handle)
+ */
+
+esp_err_t motorhat_emergency_stop(motorhat_handle_t *handle);
 
 #endif // _MOTORHAT_H_

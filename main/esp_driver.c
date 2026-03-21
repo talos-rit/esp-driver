@@ -86,7 +86,7 @@ void app_main(void) {
               .bus_handle = bus.handle,
           },
   };
-  // ESP_ERROR_CHECK(motorhat_init(&motorhat, &motorhat_config));
+  ESP_ERROR_CHECK(motorhat_init(&motorhat, &motorhat_config, g_motor_events));
 
 
   // Initialize Wi-Fi and socket connection
@@ -114,16 +114,7 @@ void app_main(void) {
     if (err != ESP_OK) {
       ESP_LOGE(TAG, "Failed to get encoder count: %s", esp_err_to_name(err));
     }
-
-    // connect limit switches to stop motor in motorhat control
-
-    // overcurrent estop
-
-    // connect socket commands to motorhat control
-
+    
     vTaskDelay(pdMS_TO_TICKS(1000));
-
-    ESP_LOGI(TAG, "Event group: %d", xEventGroupGetBits(g_motor_events));
-    xEventGroupClearBits(g_motor_events, FAULT_ANY);
   }
 }
