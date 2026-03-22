@@ -48,7 +48,7 @@ esp_err_t motorhat_init(motorhat_handle_t *handle, const motorhat_config_t *conf
 
   xTaskCreate(motor_stop_task, "motor_stop_task", 4096, handle, 8, NULL);
 
-  // return pca9685_init(&handle->pca9685, &config->pca9685_config);
+  return pca9685_init(&handle->pca9685, &config->pca9685_config);
   return ESP_OK;
 }
 
@@ -130,7 +130,7 @@ esp_err_t motorhat_set_motor_speed(motorhat_handle_t *handle,
 
   const motorhat_motor_channels_t *channels = &motor_channels[motor];
 
-  // return pca9685_set_duty_cycle(&handle->pca9685, channels->pwm_channel, speed);
+  return pca9685_set_duty_cycle(&handle->pca9685, channels->pwm_channel, speed);
   return ESP_OK;
 }
 
@@ -153,35 +153,31 @@ esp_err_t motorhat_set_motor_direction(motorhat_handle_t *handle,
 
   switch (direction) {
   case MOTORHAT_DIRECTION_FORWARD:
-    // err = pca9685_digital_write(&handle->pca9685, channels->in1_channel, true);
-    // if (err != ESP_OK)
-    //   return err;
-    // err = pca9685_digital_write(&handle->pca9685, channels->in2_channel, false);
-    ESP_LOGI(TAG, "Set motor %d direction to FORWARD", motor);
+    err = pca9685_digital_write(&handle->pca9685, channels->in1_channel, true);
+    if (err != ESP_OK)
+      return err;
+    err = pca9685_digital_write(&handle->pca9685, channels->in2_channel, false);
     err = ESP_OK;
     break;
   case MOTORHAT_DIRECTION_BACKWARD:
-    // err = pca9685_digital_write(&handle->pca9685, channels->in1_channel, false);
-    // if (err != ESP_OK)
-    //   return err;
-    // err = pca9685_digital_write(&handle->pca9685, channels->in2_channel, true);
-    ESP_LOGI(TAG, "Set motor %d direction to BACKWARD", motor);
+    err = pca9685_digital_write(&handle->pca9685, channels->in1_channel, false);
+    if (err != ESP_OK)
+      return err;
+    err = pca9685_digital_write(&handle->pca9685, channels->in2_channel, true);
     err = ESP_OK;
     break;
   case MOTORHAT_DIRECTION_BRAKE:
-    // err = pca9685_digital_write(&handle->pca9685, channels->in1_channel, true);
-    // if (err != ESP_OK)
-    //   return err;
-    // err = pca9685_digital_write(&handle->pca9685, channels->in2_channel, true);
-    ESP_LOGI(TAG, "Set motor %d direction to BRAKE", motor);
+    err = pca9685_digital_write(&handle->pca9685, channels->in1_channel, true);
+    if (err != ESP_OK)
+      return err;
+    err = pca9685_digital_write(&handle->pca9685, channels->in2_channel, true);
     err = ESP_OK;
     break;
   case MOTORHAT_DIRECTION_RELEASE:
-    // err = pca9685_digital_write(&handle->pca9685, channels->in1_channel, false);
-    // if (err != ESP_OK)
-    //   return err;
-    // err = pca9685_digital_write(&handle->pca9685, channels->in2_channel, false);
-    ESP_LOGI(TAG, "Set motor %d direction to RELEASE", motor);
+    err = pca9685_digital_write(&handle->pca9685, channels->in1_channel, false);
+    if (err != ESP_OK)
+      return err;
+    err = pca9685_digital_write(&handle->pca9685, channels->in2_channel, false);
     err = ESP_OK;
     break;
   default:
@@ -203,15 +199,14 @@ esp_err_t motorhat_emergency_stop(motorhat_handle_t *handle) {
         const motorhat_motor_channels_t *ch = &motor_channels[m];
 
         // Stop PWM cycle and release both control lines
-        ESP_LOGI(TAG, "Emergency stopping motor %d", m);
-        // esp_err_t err = pca9685_set_duty_cycle(&handle->pca9685, ch->pwm_channel, 0);
-        // if (err != ESP_OK && first_err == ESP_OK) first_err = err;
+        esp_err_t err = pca9685_set_duty_cycle(&handle->pca9685, ch->pwm_channel, 0);
+        if (err != ESP_OK && first_err == ESP_OK) first_err = err;
 
-        // err = pca9685_digital_write(&handle->pca9685, ch->in1_channel, false);
-        // if (err != ESP_OK && first_err == ESP_OK) first_err = err;
+        err = pca9685_digital_write(&handle->pca9685, ch->in1_channel, false);
+        if (err != ESP_OK && first_err == ESP_OK) first_err = err;
 
-        // err = pca9685_digital_write(&handle->pca9685, ch->in2_channel, false);
-        // if (err != ESP_OK && first_err == ESP_OK) first_err = err;
+        err = pca9685_digital_write(&handle->pca9685, ch->in2_channel, false);
+        if (err != ESP_OK && first_err == ESP_OK) first_err = err;
     }
     return first_err;
 }
