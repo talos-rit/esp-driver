@@ -191,7 +191,16 @@ error:
 }
 
 esp_err_t driver_socket_init(driver_socket_handle_t *socket_handle,
-                             const driver_socket_config_t *config) {
+                             const driver_socket_config_t *config, const driver_socket_api_motor_interface_t *motor_interface) {
+
+  if (socket_handle == NULL || config == NULL || motor_interface == NULL) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  esp_err_t ret = driver_socket_api_init(motor_interface);
+  if (ret != ESP_OK) {
+    return ret;
+  }
 
   task_args_t *task_args = malloc(sizeof(task_args_t));
   if (task_args == NULL) {

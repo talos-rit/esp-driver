@@ -10,11 +10,19 @@
 #include "encoder.h"
 #include "motorhat.h"
 #include "signal_bus.h"
+#include "driver_socket_api.h"
 #include "nvs_flash.h"
 
 #include "driver/gpio.h"
 
 #define TAG "MAIN"
+
+static const driver_socket_api_motor_interface_t motor_interface = {
+    .polar_pan       = motorhat_polar_pan,
+    .polar_pan_start = motorhat_polar_pan_start,
+    .polar_pan_stop  = motorhat_polar_pan_stop,
+    .home            = motorhat_home,
+};
 
 void app_main(void) {
 
@@ -104,7 +112,7 @@ void app_main(void) {
       .port = CONFIG_DRIVER_SERVER_PORT,
   };
 
-  ESP_ERROR_CHECK(driver_socket_init(&socket_handle, &socket_config));
+  ESP_ERROR_CHECK(driver_socket_init(&socket_handle, &socket_config, &motor_interface));
 
 
   int pulse_count;
@@ -113,8 +121,9 @@ void app_main(void) {
     esp_err_t err = encoder_get_raw_count(&encoder, &pulse_count);
     if (err != ESP_OK) {
       ESP_LOGE(TAG, "Failed to get encoder count: %s", esp_err_to_name(err));
+      vTaskDelay(pdMS_TO_TICKS(10)); // Avoid busy loop on error
     }
-    
-    vTaskDelay(pdMS_TO_TICKS(1000));
-  }
+
+    // This loop can also be used to add periodic tasks like reading sensors, or checking limit switches.
+    // However, it must not terminate or structs initialized here will disappear from stack memory, breaking modules that use them.
 }

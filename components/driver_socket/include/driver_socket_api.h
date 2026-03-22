@@ -52,6 +52,30 @@ typedef struct {
   int8_t delta_altitude; /** Requested change in altitude */
 } __attribute__((packed)) driver_socket_api_polar_pan_start_payload_t;
 
+typedef struct {
+    esp_err_t (*polar_pan)(int16_t delta_azimuth, int16_t delta_altitude,
+                           uint16_t delay_ms, uint16_t time_ms);
+    esp_err_t (*polar_pan_start)(int8_t delta_azimuth, int8_t delta_altitude);
+    esp_err_t (*polar_pan_stop)(void);
+    esp_err_t (*home)(uint16_t delay_ms);
+} driver_socket_api_motor_interface_t;
+
+/**
+ * @brief Initializes the socket API module with the provided motor control interface.
+ *
+ * This function must be called before processing any incoming messages with
+ * driver_socket_api_process(). It sets up the internal function pointers for
+ * motor control commands that will be invoked when corresponding messages are
+ * received.
+ *
+ * @param[in] motor_interface Pointer to a structure containing function pointers
+ *                            for motor control operations.
+ *
+ * @return
+ *          ESP_OK : Initialization successful
+ *          ESP_ERR_INVALID_ARG : Invalid argument (e.g., NULL pointer)
+ */
+esp_err_t driver_socket_api_init(const driver_socket_api_motor_interface_t *motor_interface);
 
 /**
 * @brief Process incoming socket API messages. This function should be called

@@ -3,6 +3,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "sys/socket.h"
+#include "driver_socket_api.h"
 
 
 /**
@@ -33,13 +34,15 @@ typedef struct {
  *
  * @param[out] socket_handle Socket handle to be initialized by this function
  * @param[in] config Socket configuration
+ * @param[in] motor_interface Motor control interface to be used by driver_socket_api
  * @return
  *          ESP_OK : Socket driver initialized successfully
+ *          ESP_ERR_INVALID_ARG : Invalid argument
  *          ESP_ERR_NO_MEM : Unable to allocate memory for task arguments or
  * server_ready semaphore
  */
 esp_err_t driver_socket_init(driver_socket_handle_t *socket_handle,
-                             const driver_socket_config_t *config);
+                             const driver_socket_config_t *config, const driver_socket_api_motor_interface_t *motor_interface);
 
 /**
  * @brief Utility to log socket errors

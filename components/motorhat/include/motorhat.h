@@ -93,6 +93,63 @@ static const motorhat_motor_channels_t motor_channels[MOTORHAT_NUM_MOTORS] = {
 esp_err_t motorhat_init(motorhat_handle_t *handle, const motorhat_config_t *config, EventGroupHandle_t events);
 
 /**
+ * @brief Polar pan command
+ *
+ * Triggers a polar pan movement based on the specified azimuth and altitude deltas, with 
+ * timing parameters for delay and duration. This is a high-level command that can be 
+ * implemented to control multiple motors in coordination to achieve the desired pan movement.
+ *
+ * @param[in] delta_azimuth Azimuth delta for the pan movement
+ * @param[in] delta_altitude Altitude delta for the pan movement
+ * @param[in] delay_ms Delay before starting the movement
+ * @param[in] time_ms Duration of the movement
+ *
+ * @return
+ *    - ESP_OK: Success
+ *    - ESP_ERR_*: Other ESP-IDF error codes propogated from motor control functions
+ */
+esp_err_t motorhat_polar_pan(int16_t delta_azimuth, int16_t delta_altitude,
+                                  uint16_t delay_ms, uint16_t time_ms);
+
+/**
+ * @brief Polar pan start command
+ *
+ * Starts a continuous pan movement that will run until a stop command is received.
+ *
+ * @param[in] delta_azimuth Azimuth delta for the pan movement
+ * @param[in] delta_altitude Altitude delta for the pan movement
+ *
+ * @return
+ *    - ESP_OK: Success
+ *    - ESP_ERR_*: Other ESP-IDF error codes propogated from motor control functions
+ */
+esp_err_t motorhat_polar_pan_start(int8_t delta_azimuth, int8_t delta_altitude);
+
+/**
+ * @brief Polar pan stop command
+ *
+ * Stops any ongoing polar pan movement initiated by polar_pan_start.
+ *
+ * @return
+ *    - ESP_OK: Success
+ *    - ESP_ERR_*: Other ESP-IDF error codes propogated from motor control functions
+ */
+esp_err_t motorhat_polar_pan_stop(void);
+
+/**
+ * @brief Home command
+ *
+ * Moves the motors to a predefined home position after an optional delay.
+ *
+ * @param[in] delay_ms Delay before starting the homing movement
+ *
+ * @return
+ *    - ESP_OK: Success
+ *    - ESP_ERR_*: Other ESP-IDF error codes propogated from motor control functions
+ */
+esp_err_t motorhat_home(uint16_t delay_ms);
+
+/**
  * @brief Set motor speed
  *
  * Sets the PWM duty cycle controlling motor speed. The speed does not affect

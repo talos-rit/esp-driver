@@ -41,6 +41,33 @@ esp_err_t motorhat_init(motorhat_handle_t *handle, const motorhat_config_t *conf
   return ESP_OK;
 }
 
+esp_err_t motorhat_polar_pan(int16_t delta_azimuth, int16_t delta_altitude,
+                                  uint16_t delay_ms, uint16_t time_ms) {
+    // motorhat_set_motor_direction();
+    ESP_LOGI(TAG, "Received polar pan command: delta_azimuth=%d, delta_altitude=%d, delay_ms=%d, time_ms=%d",
+             delta_azimuth, delta_altitude, delay_ms, time_ms);
+    return ESP_OK;
+}
+
+esp_err_t motorhat_polar_pan_start(int8_t delta_azimuth, int8_t delta_altitude) {
+    // motorhat_set_motor_direction();
+    ESP_LOGI(TAG, "Received polar pan start command: delta_azimuth=%d, delta_altitude=%d",
+             delta_azimuth, delta_altitude);
+    return ESP_OK;
+}
+
+esp_err_t motorhat_polar_pan_stop(void) {
+    // motorhat_set_motor_direction();
+    ESP_LOGI(TAG, "Received polar pan stop command");
+    return ESP_OK;
+}
+
+esp_err_t motorhat_home(uint16_t delay_ms) {
+    // motorhat_set_motor_direction();
+    ESP_LOGI(TAG, "Received home command: delay_ms=%d", delay_ms);
+    return ESP_OK;
+}
+
 esp_err_t motorhat_set_motor_speed(motorhat_handle_t *handle,
                                    motorhat_motor_t motor, uint16_t speed) {
   if (handle == NULL || motor < MOTORHAT_MOTOR1 ||
