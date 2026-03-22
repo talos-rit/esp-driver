@@ -8,6 +8,9 @@
 
 #define DEFAULT_FREQUENCY_HZ 1526.0f
 
+/** 
+ * @brief Motor enumeration
+ */
 typedef enum {
   MOTORHAT_MOTOR1 = 0,
   MOTORHAT_MOTOR2,
@@ -15,6 +18,23 @@ typedef enum {
   MOTORHAT_MOTOR4,
   MOTORHAT_NUM_MOTORS
 } motorhat_motor_t;
+
+/** 
+ * @brief Axis enumeration
+ */
+typedef enum {
+    MOTORHAT_AXIS_AZIMUTH = 0,
+    MOTORHAT_AXIS_ALTITUDE,
+    MOTORHAT_NUM_AXES
+} motorhat_axis_t;
+
+/** 
+ * @brief Mapping of axes to motors
+ */
+static const motorhat_motor_t axis_motor[MOTORHAT_NUM_AXES] = {
+    [MOTORHAT_AXIS_AZIMUTH]  = MOTORHAT_MOTOR1,
+    [MOTORHAT_AXIS_ALTITUDE] = MOTORHAT_MOTOR2,
+};
 
 /**
  * @brief Motor direction and state control

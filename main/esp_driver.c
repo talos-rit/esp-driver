@@ -81,6 +81,7 @@ void app_main(void) {
       .invert_angle = CONFIG_ENCODER_0_ANGLE_INVERT,
   };
   ESP_ERROR_CHECK(encoder_init(&encoder, &encoder_config));
+  ESP_ERROR_CHECK(encoder_start(&encoder));
 
 
   // Initialize motor controller
@@ -121,9 +122,11 @@ void app_main(void) {
     esp_err_t err = encoder_get_raw_count(&encoder, &pulse_count);
     if (err != ESP_OK) {
       ESP_LOGE(TAG, "Failed to get encoder count: %s", esp_err_to_name(err));
-      vTaskDelay(pdMS_TO_TICKS(10)); // Avoid busy loop on error
     }
+
+    vTaskDelay(pdMS_TO_TICKS(10)); // Avoid busy loop
 
     // This loop can also be used to add periodic tasks like reading sensors, or checking limit switches.
     // However, it must not terminate or structs initialized here will disappear from stack memory, breaking modules that use them.
+  }
 }

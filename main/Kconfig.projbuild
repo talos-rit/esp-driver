@@ -23,23 +23,17 @@ menu "Talos ESP Driver Configuration"
         help
             I2C address for the MotorHAT device.
 
+    config DRIVER_MOTORHAT_PAN_SPEED
+        string "MotorHAT Pan Speed"
+        default "0.8"
+        help
+            The fraction of PCA9685's max PWM speed to use when driving polar pan.
+
     config DRIVER_ADS1015_SDA_PIN
         int "ADS1015 SDA Pin"
         default 18
         help
             GPIO pin number for the ADS1015 SDA line.
-
-    config DRIVER_ADS1015_SCL_PIN
-        int "ADS1015 SCL Pin"
-        default 19
-        help
-            GPIO pin number for the ADS1015 SCL line.
-
-    config DRIVER_ADS1015_I2C_BUS
-        int "ADS1015 I2C Bus Number"
-        default 1
-        help
-            I2C bus number for ADS1015 communication.
 
     config DRIVER_ADS1015_ADDRESS
         hex "ADS1015 I2C Address"
