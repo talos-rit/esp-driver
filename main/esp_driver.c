@@ -12,10 +12,15 @@
 #include "signal_bus.h"
 #include "driver_socket_api.h"
 #include "nvs_flash.h"
+#include "limit_switch.h"
 
 #include "driver/gpio.h"
 
 #define TAG "MAIN"
+#include "encoder.h"
+
+#define ENCODER_GLITCH_FILTER 100 //CONFIG_ENCODER_GLITCH_FILTER
+#define ENCODER_STANDARD_RESOLUTION 20
 
 static const driver_socket_api_motor_interface_t motor_interface = {
     .polar_pan       = motorhat_polar_pan,
@@ -105,6 +110,7 @@ void app_main(void) {
   };
 
   ESP_ERROR_CHECK(wifi_init(&wifi_config));
+
   ESP_ERROR_CHECK(wait_for_wifi_connection());
 
   driver_socket_handle_t socket_handle;
