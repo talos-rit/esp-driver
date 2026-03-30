@@ -9,6 +9,7 @@
     X(I2C_Bus)      \
     X(PCA9685)      \
     X(MotorHAT)     \
+    X(ENCODER)      \
     X(ADS1015)      \
     X(Driver_WiFi)   \
 
