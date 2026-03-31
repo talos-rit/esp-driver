@@ -1,8 +1,10 @@
 #include "pca9685.h"
+
+#include <stdint.h>
+
 #include "driver/i2c_master.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
-#include <stdint.h>
 
 static pca9685_channel_registers_t channel_regs[PCA9685_CHANNEL15 + 1] = {
     {PCA9685_LED0_ON_L, PCA9685_LED0_ON_H, PCA9685_LED0_OFF_L,
@@ -39,8 +41,8 @@ static pca9685_channel_registers_t channel_regs[PCA9685_CHANNEL15 + 1] = {
      PCA9685_LED15_OFF_H},
 };
 
-esp_err_t pca9685_init(pca9685_handle_t *handle,
-                       const pca9685_config_t *config) {
+esp_err_t pca9685_init(pca9685_handle_t* handle,
+                       const pca9685_config_t* config) {
   if (handle == NULL || config == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
@@ -98,9 +100,9 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
   vTaskDelay(pdMS_TO_TICKS(5));
 
   // Enable auto increment
-  ret = pca9685_write_register(handle, PCA9685_MODE1,
-                               oldmode | PCA9685_MODE1_RESTART |
-                                   PCA9685_MODE1_AI);
+  ret = pca9685_write_register(
+      handle, PCA9685_MODE1,
+      oldmode | PCA9685_MODE1_RESTART | PCA9685_MODE1_AI);
   if (ret != ESP_OK) {
     return ret;
   }
@@ -108,7 +110,7 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
   return ESP_OK;
 }
 
-esp_err_t pca9685_deinit(pca9685_handle_t *handle) {
+esp_err_t pca9685_deinit(pca9685_handle_t* handle) {
   if (handle == NULL || handle->dev_handle == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
@@ -122,7 +124,7 @@ esp_err_t pca9685_deinit(pca9685_handle_t *handle) {
   return ESP_OK;
 }
 
-esp_err_t pca9685_set_duty_cycle(pca9685_handle_t *handle,
+esp_err_t pca9685_set_duty_cycle(pca9685_handle_t* handle,
                                  pca9685_channel_t channel,
                                  uint16_t duty_cycle) {
   if (handle == NULL || channel < PCA9685_CHANNEL0 ||
@@ -149,7 +151,7 @@ esp_err_t pca9685_set_duty_cycle(pca9685_handle_t *handle,
   return pca9685_write_channel_registers(handle, channel, on, off);
 }
 
-esp_err_t pca9685_digital_write(pca9685_handle_t *handle,
+esp_err_t pca9685_digital_write(pca9685_handle_t* handle,
                                 pca9685_channel_t channel, bool level) {
   if (handle == NULL || channel < PCA9685_CHANNEL0 ||
       channel > PCA9685_CHANNEL15) {
@@ -163,7 +165,7 @@ esp_err_t pca9685_digital_write(pca9685_handle_t *handle,
   }
 }
 
-esp_err_t pca9685_write_channel_registers(pca9685_handle_t *handle,
+esp_err_t pca9685_write_channel_registers(pca9685_handle_t* handle,
                                           pca9685_channel_t channel,
                                           uint16_t on, uint16_t off) {
   if (handle == NULL || channel < PCA9685_CHANNEL0 ||
@@ -176,7 +178,6 @@ esp_err_t pca9685_write_channel_registers(pca9685_handle_t *handle,
   }
 
   pca9685_channel_registers_t regs = channel_regs[channel];
-
 
   // The PCA9685 uses 12-bit PWM values for each channel (0–4095).
   // These 12 bits are split across two 8-bit registers:
@@ -207,17 +208,17 @@ esp_err_t pca9685_write_channel_registers(pca9685_handle_t *handle,
                              PCA9685_I2C_MASTER_TIMEOUT_MS);
 }
 
-esp_err_t pca9685_read_register(pca9685_handle_t *handle,
-                                pca9685_register_t reg, uint8_t *data) {
+esp_err_t pca9685_read_register(pca9685_handle_t* handle,
+                                pca9685_register_t reg, uint8_t* data) {
   if (handle == NULL || data == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
 
-  return i2c_master_transmit_receive(handle->dev_handle, (uint8_t *)&reg, 1,
+  return i2c_master_transmit_receive(handle->dev_handle, (uint8_t*)&reg, 1,
                                      data, 1, PCA9685_I2C_MASTER_TIMEOUT_MS);
 }
 
-esp_err_t pca9685_write_register(pca9685_handle_t *handle,
+esp_err_t pca9685_write_register(pca9685_handle_t* handle,
                                  pca9685_register_t reg, uint8_t data) {
   if (handle == NULL) {
     return ESP_ERR_INVALID_ARG;

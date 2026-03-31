@@ -11,13 +11,14 @@
  * @brief limit_switch configuration structure
  */
 typedef struct {
-    gpio_num_t limit_gpio;                /**< GPIO number for limit switch pin */
+  gpio_num_t limit_gpio; /**< GPIO number for limit switch pin */
 } limit_switch_config_t;
 
 /**
  * @brief Initialize the limit switch task
  *
- * This function initializes the limit switch task and sets up the limit switch GPIO.
+ * This function initializes the limit switch task and sets up the limit switch
+ * GPIO.
  *
  * @param[in] config Pointer to configuration structure
  *
@@ -25,6 +26,7 @@ typedef struct {
  *    - ESP_OK: Success
  *    - ESP_ERR_INVALID_ARG: Invalid argument
  */
-esp_err_t limit_switch_init(const limit_switch_config_t *config, EventGroupHandle_t events);
+esp_err_t limit_switch_init(const limit_switch_config_t* config,
+                            EventGroupHandle_t events);
 
-#endif // _LIMIT_SWITCH_H
+#endif  // _LIMIT_SWITCH_H

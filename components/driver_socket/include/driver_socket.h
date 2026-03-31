@@ -1,10 +1,9 @@
 #ifndef _DRIVER_SOCKET_H_
 #define _DRIVER_SOCKET_H_
 
+#include "driver_socket_api.h"
 #include "freertos/FreeRTOS.h"
 #include "sys/socket.h"
-#include "driver_socket_api.h"
-
 
 /**
  * @brief Socket driver handle and configuration structures
@@ -14,10 +13,9 @@ typedef struct {
 } driver_socket_handle_t;
 
 typedef struct {
-  const char *ip;
-  const char *port;
+  const char* ip;
+  const char* port;
 } driver_socket_config_t;
-
 
 /**
  * @brief Task arguments structure for the socket task
@@ -34,15 +32,17 @@ typedef struct {
  *
  * @param[out] socket_handle Socket handle to be initialized by this function
  * @param[in] config Socket configuration
- * @param[in] motor_interface Motor control interface to be used by driver_socket_api
+ * @param[in] motor_interface Motor control interface to be used by
+ * driver_socket_api
  * @return
  *          ESP_OK : Socket driver initialized successfully
  *          ESP_ERR_INVALID_ARG : Invalid argument
  *          ESP_ERR_NO_MEM : Unable to allocate memory for task arguments or
  * server_ready semaphore
  */
-esp_err_t driver_socket_init(driver_socket_handle_t *socket_handle,
-                             const driver_socket_config_t *config, const driver_socket_api_motor_interface_t *motor_interface);
+esp_err_t driver_socket_init(
+    driver_socket_handle_t* socket_handle, const driver_socket_config_t* config,
+    const driver_socket_api_motor_interface_t* motor_interface);
 
 /**
  * @brief Utility to log socket errors
@@ -52,14 +52,14 @@ esp_err_t driver_socket_init(driver_socket_handle_t *socket_handle,
  * @param[in] err Socket errno
  * @param[in] message Message to print
  */
-void log_socket_error(const char *tag, const int sock, const int err,
-                             const char *message);
+void log_socket_error(const char* tag, const int sock, const int err,
+                      const char* message);
 
 /**
  * @brief Returns the string representation of client's address (accepted on
  * this server)
  */
-char *get_clients_address(struct sockaddr_storage *source_addr);
+char* get_clients_address(struct sockaddr_storage* source_addr);
 
 /**
  * @brief Tries to receive data from specified sockets in a non-blocking way,
@@ -76,8 +76,7 @@ char *get_clients_address(struct sockaddr_storage *source_addr);
  *          -2 : Socket is not connected, to distinguish between an actual
  * socket error and active disconnection
  */
-int try_receive(const char *tag, const int sock, uint8_t *data,
-                       size_t max_len);
+int try_receive(const char* tag, const int sock, uint8_t* data, size_t max_len);
 
 /**
  * @brief Sends the specified data to the socket. This function blocks until all
@@ -91,7 +90,7 @@ int try_receive(const char *tag, const int sock, uint8_t *data,
  *          >0 : Size the written data
  *          -1 : Error occurred during socket write operation
  */
-int socket_send(const char *tag, const int sock, const uint8_t *data,
-                       const size_t len);
+int socket_send(const char* tag, const int sock, const uint8_t* data,
+                const size_t len);
 
-#endif // _DRIVER_SOCKET_H_
+#endif  // _DRIVER_SOCKET_H_

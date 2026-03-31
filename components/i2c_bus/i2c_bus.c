@@ -1,8 +1,8 @@
 #include "i2c_bus.h"
+
 #include "driver/i2c_master.h"
 
-esp_err_t i2c_bus_init(i2c_bus_t *bus, const i2c_bus_config_t *config) {
-
+esp_err_t i2c_bus_init(i2c_bus_t* bus, const i2c_bus_config_t* config) {
   i2c_master_bus_config_t bus_config = {
       .i2c_port = config->port,
       .sda_io_num = config->sda_io_num,

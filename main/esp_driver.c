@@ -1,42 +1,33 @@
+#include "ads1015.h"
+#include "driver/gpio.h"
 #include "driver_socket.h"
+#include "driver_socket_api.h"
 #include "driver_wifi.h"
+#include "encoder.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "i2c_bus.h"
-
-#include "ads1015.h"
 #include "limit_switch.h"
-#include "encoder.h"
 #include "motorhat.h"
-#include "signal_bus.h"
-#include "driver_socket_api.h"
 #include "nvs_flash.h"
-#include "limit_switch.h"
-
-#include "driver/gpio.h"
+#include "pca9685.h"
+#include "signal_bus.h"
 
 #define TAG "MAIN"
-#include "encoder.h"
 
-#define ENCODER_GLITCH_FILTER 100 //CONFIG_ENCODER_GLITCH_FILTER
+#define ENCODER_GLITCH_FILTER 100  // CONFIG_ENCODER_GLITCH_FILTER
 #define ENCODER_STANDARD_RESOLUTION 20
+#define POLAR_PAN_SPEED
 
 static const driver_socket_api_motor_interface_t motor_interface = {
-    .polar_pan       = motorhat_polar_pan,
+    .polar_pan = motorhat_polar_pan,
     .polar_pan_start = motorhat_polar_pan_start,
-    .polar_pan_stop  = motorhat_polar_pan_stop,
-    .home            = motorhat_home,
+    .polar_pan_stop = motorhat_polar_pan_stop,
+    .home = motorhat_home,
 };
 
 void app_main(void) {
-
-  // Install GPIO interrupt service
-  ESP_ERROR_CHECK(gpio_install_isr_service(0));
-
-  // Initialize signal bus
-  signal_bus_init();
-
   // Initialize NVS
   esp_err_t ret = nvs_flash_init();
   if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
@@ -46,6 +37,11 @@ void app_main(void) {
   }
   ESP_ERROR_CHECK(ret);
 
+  // Install GPIO interrupt service
+  ESP_ERROR_CHECK(gpio_install_isr_service(0));
+
+  // Initialize signal bus
+  ESP_ERROR_CHECK(signal_bus_init());
 
   // Initialize I2C bus
   i2c_bus_t bus;
@@ -56,13 +52,11 @@ void app_main(void) {
   };
   ESP_ERROR_CHECK(i2c_bus_init(&bus, &bus_config));
 
-
   // Initialize limit switches
   limit_switch_config_t limit_switch_config = {
       .limit_gpio = CONFIG_DRIVER_LIMIT_SWITCH_PIN,
   };
   ESP_ERROR_CHECK(limit_switch_init(&limit_switch_config, g_motor_events));
-
 
   // Initialize current sensing
   ads1015_handle_t ads;
@@ -74,7 +68,6 @@ void app_main(void) {
       .adc_data_rate = CONFIG_DRIVER_ADS1015_DATA_RATE,
   };
   ESP_ERROR_CHECK(ads1015_init(&ads, &ads_config, g_motor_events));
-
 
   // Initialize encoders
   encoder_handle_t encoder;
@@ -88,7 +81,6 @@ void app_main(void) {
   ESP_ERROR_CHECK(encoder_init(&encoder, &encoder_config));
   ESP_ERROR_CHECK(encoder_start(&encoder));
 
-
   // Initialize motor controller
   motorhat_handle_t motorhat;
   motorhat_config_t motorhat_config = {
@@ -99,9 +91,10 @@ void app_main(void) {
               .pwm_freq_hz = DEFAULT_FREQUENCY_HZ,
               .bus_handle = bus.handle,
           },
+      .polar_pan_speed =
+          PCA9685_PWM_MAX * atof(CONFIG_DRIVER_MOTORHAT_PAN_SPEED),
   };
   ESP_ERROR_CHECK(motorhat_init(&motorhat, &motorhat_config, g_motor_events));
-
 
   // Initialize Wi-Fi and socket connection
   driver_wifi_config_t wifi_config = {
@@ -119,8 +112,8 @@ void app_main(void) {
       .port = CONFIG_DRIVER_SERVER_PORT,
   };
 
-  ESP_ERROR_CHECK(driver_socket_init(&socket_handle, &socket_config, &motor_interface));
-
+  ESP_ERROR_CHECK(
+      driver_socket_init(&socket_handle, &socket_config, &motor_interface));
 
   int pulse_count;
 
@@ -130,9 +123,11 @@ void app_main(void) {
       ESP_LOGE(TAG, "Failed to get encoder count: %s", esp_err_to_name(err));
     }
 
-    vTaskDelay(pdMS_TO_TICKS(10)); // Avoid busy loop
+    vTaskDelay(pdMS_TO_TICKS(10));  // Avoid busy loop
 
-    // This loop can also be used to add periodic tasks like reading sensors, or checking limit switches.
-    // However, it must not terminate or structs initialized here will disappear from stack memory, breaking modules that use them.
+    // This loop can also be used to add periodic tasks like reading sensors, or
+    // checking limit switches. However, it must not terminate or structs
+    // initialized here will disappear from stack memory, breaking modules that
+    // use them.
   }
 }

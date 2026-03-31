@@ -2,8 +2,8 @@
 #define _I2C_BUS_H_
 
 #include "driver/i2c_types.h"
-#include "soc/gpio_num.h"
 #include "esp_err.h"
+#include "soc/gpio_num.h"
 
 /**
  * @brief I2C bus configuration structure
@@ -12,9 +12,9 @@
  * including the I2C port number and GPIO pin assignments.
  */
 typedef struct {
-  i2c_port_t port;         /**< I2C port number (I2C_NUM_0, I2C_NUM_1, etc.) */
-  gpio_num_t sda_io_num;   /**< GPIO number for SDA (data line) */
-  gpio_num_t scl_io_num;   /**< GPIO number for SCL (clock line) */
+  i2c_port_t port;       /**< I2C port number (I2C_NUM_0, I2C_NUM_1, etc.) */
+  gpio_num_t sda_io_num; /**< GPIO number for SDA (data line) */
+  gpio_num_t scl_io_num; /**< GPIO number for SCL (clock line) */
 } i2c_bus_config_t;
 
 /**
@@ -24,7 +24,7 @@ typedef struct {
  * for all subsequent operations on the I2C bus, including adding devices.
  */
 typedef struct {
-  i2c_master_bus_handle_t handle;  /**< ESP-IDF I2C master bus handle */
+  i2c_master_bus_handle_t handle; /**< ESP-IDF I2C master bus handle */
 } i2c_bus_t;
 
 /**
@@ -40,11 +40,13 @@ typedef struct {
  * devices using the ESP-IDF i2c_master_bus_add_device() function.
  *
  * @param[out] bus Pointer to I2C bus structure to initialize
- * @param[in] config Pointer to configuration structure with port and GPIO settings
+ * @param[in] config Pointer to configuration structure with port and GPIO
+ * settings
  *
  * @return
  *    - ESP_OK: Success
- *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer, invalid port, or invalid GPIO)
+ *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer, invalid port, or
+ * invalid GPIO)
  *    - ESP_ERR_NO_MEM: Memory allocation failed
  *    - ESP_ERR_INVALID_STATE: I2C driver already installed on this port
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C driver initialization
@@ -68,6 +70,6 @@ typedef struct {
  * }
  * @endcode
  */
-esp_err_t i2c_bus_init(i2c_bus_t *bus, const i2c_bus_config_t *config);
+esp_err_t i2c_bus_init(i2c_bus_t* bus, const i2c_bus_config_t* config);
 
-#endif // _I2C_BUS_H_
+#endif  // _I2C_BUS_H_

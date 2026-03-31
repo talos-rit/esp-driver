@@ -1,9 +1,10 @@
 #ifndef _PCA9685_H_
 #define _PCA9685_H_
 
+#include <stdint.h>
+
 #include "driver/i2c_types.h"
 #include "esp_err.h"
-#include <stdint.h>
 
 #define PCA9685_PWM_MAX 4096
 #define PCA9685_I2C_MASTER_TIMEOUT_MS 1000
@@ -16,8 +17,8 @@
 // Calculate pre-scale value for a desired PWM frequency
 // See PCA9685 datasheet section 7.3.5
 // The + 0.5f is for rounding to nearest integer without truncation
-#define PCA9685_CALC_PRE_SCALE(freq_hz)                                        \
-  ((uint8_t)((PCA9685_OSCILLATOR_FREQ_HZ / (4096.0f * (freq_hz))) - 1.0f +     \
+#define PCA9685_CALC_PRE_SCALE(freq_hz)                                    \
+  ((uint8_t)((PCA9685_OSCILLATOR_FREQ_HZ / (4096.0f * (freq_hz))) - 1.0f + \
              0.5f))
 
 /**
@@ -204,13 +205,14 @@ typedef struct {
  * frequency)
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
-esp_err_t pca9685_init(pca9685_handle_t *handle,
-                       const pca9685_config_t *config);
+esp_err_t pca9685_init(pca9685_handle_t* handle,
+                       const pca9685_config_t* config);
 
 /**
  * @brief Deinitialize the PCA9685 device
  *
- * This function releases the I2C device handle and performs any necessary cleanup.
+ * This function releases the I2C device handle and performs any necessary
+ * cleanup.
  *
  * @param[in] handle Pointer to PCA9685 handle structure
  * @return
@@ -218,7 +220,7 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
  *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer)
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
- esp_err_t pca9685_deinit(pca9685_handle_t *handle);
+esp_err_t pca9685_deinit(pca9685_handle_t* handle);
 
 /**
  * @brief Set PWM duty cycle for a specific channel
@@ -238,7 +240,7 @@ esp_err_t pca9685_init(pca9685_handle_t *handle,
  * duty cycle > 4096)
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
-esp_err_t pca9685_set_duty_cycle(pca9685_handle_t *handle,
+esp_err_t pca9685_set_duty_cycle(pca9685_handle_t* handle,
                                  pca9685_channel_t channel,
                                  uint16_t duty_cycle);
 
@@ -257,7 +259,7 @@ esp_err_t pca9685_set_duty_cycle(pca9685_handle_t *handle,
  *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL handle or invalid channel)
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
-esp_err_t pca9685_digital_write(pca9685_handle_t *handle,
+esp_err_t pca9685_digital_write(pca9685_handle_t* handle,
                                 pca9685_channel_t channel, bool level);
 
 /**
@@ -279,7 +281,7 @@ esp_err_t pca9685_digital_write(pca9685_handle_t *handle,
  * values > 4096)
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
-esp_err_t pca9685_write_channel_registers(pca9685_handle_t *handle,
+esp_err_t pca9685_write_channel_registers(pca9685_handle_t* handle,
                                           pca9685_channel_t channel,
                                           uint16_t on, uint16_t off);
 
@@ -295,8 +297,8 @@ esp_err_t pca9685_write_channel_registers(pca9685_handle_t *handle,
  *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer)
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
-esp_err_t pca9685_read_register(pca9685_handle_t *handle,
-                                pca9685_register_t reg, uint8_t *data);
+esp_err_t pca9685_read_register(pca9685_handle_t* handle,
+                                pca9685_register_t reg, uint8_t* data);
 
 /**
  * @brief Write a single byte to a PCA9685 register
@@ -310,7 +312,7 @@ esp_err_t pca9685_read_register(pca9685_handle_t *handle,
  *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL handle)
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
-esp_err_t pca9685_write_register(pca9685_handle_t *handle,
+esp_err_t pca9685_write_register(pca9685_handle_t* handle,
                                  pca9685_register_t reg, uint8_t data);
 
-#endif // _PCA9685_H_
+#endif  // _PCA9685_H_

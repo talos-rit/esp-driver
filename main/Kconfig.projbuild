@@ -29,12 +29,6 @@ menu "Talos ESP Driver Configuration"
         help
             The fraction of PCA9685's max PWM speed to use when driving polar pan.
 
-    config DRIVER_ADS1015_SDA_PIN
-        int "ADS1015 SDA Pin"
-        default 18
-        help
-            GPIO pin number for the ADS1015 SDA line.
-
     config DRIVER_ADS1015_ADDRESS
         hex "ADS1015 I2C Address"
         default 0x48

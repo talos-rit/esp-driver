@@ -1,6 +1,7 @@
-#include "driver/i2c_master.h"
-#include "i2c_bus.h"
 #include "ads1015.h"
+#include "driver/i2c_master.h"
+#include "freertos/idf_additions.h"
+#include "i2c_bus.h"
 #include "unity_fixture.h"
 
 static i2c_bus_t bus_handle;
@@ -33,19 +34,20 @@ TEST(ADS1015, ADS1015_Initialization) {
       .bus_handle = bus_handle.handle,
   };
 
-  esp_err_t err = ads1015_init(&handle, &config);
+  EventGroupHandle_t event_group = xEventGroupCreate();
+  esp_err_t err = ads1015_init(&handle, &config, event_group);
   TEST_ASSERT_EQUAL(ESP_OK, err);
   TEST_ASSERT_NOT_EQUAL(NULL, handle.dev_handle);
 }
 
 TEST(ADS1015, ADS1015_Wrong_Address) {
-
   ads1015_config_t config = {
-      .i2c_addr = 0x00, // Invalid address
+      .i2c_addr = 0x00,  // Invalid address
       .i2c_speed_hz = 400000,
       .bus_handle = bus_handle.handle,
   };
 
-  esp_err_t err = ads1015_init(&handle, &config);
+  EventGroupHandle_t event_group = xEventGroupCreate();
+  esp_err_t err = ads1015_init(&handle, &config, event_group);
   TEST_ASSERT_NOT_EQUAL(ESP_OK, err);
 }
