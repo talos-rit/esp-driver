@@ -12,7 +12,6 @@ static motorhat_direction_t delta_to_direction(int8_t delta) {
   if (delta > 0) return MOTORHAT_DIRECTION_FORWARD;
   if (delta < 0) return MOTORHAT_DIRECTION_BACKWARD;
 
-  //
   return MOTORHAT_DIRECTION_RELEASE;
 }
 
@@ -44,7 +43,7 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
 
   s_handle = handle;
   handle->events = events;
-  handle->stop_bits = FAULT_ANY;
+  handle->stop_bits = ESTOP_ANY;
   handle->polar_pan_speed = config->polar_pan_speed;
 
   xTaskCreate(motor_stop_task, "motor_stop_task", 4096, handle, 8, NULL);
