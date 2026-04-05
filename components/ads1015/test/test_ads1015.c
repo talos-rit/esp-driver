@@ -34,8 +34,7 @@ TEST(ADS1015, ADS1015_Initialization) {
       .bus_handle = bus_handle.handle,
   };
 
-  EventGroupHandle_t event_group = xEventGroupCreate();
-  esp_err_t err = ads1015_init(&handle, &config, event_group);
+  esp_err_t err = ads1015_init(&handle, &config);
   TEST_ASSERT_EQUAL(ESP_OK, err);
   TEST_ASSERT_NOT_EQUAL(NULL, handle.dev_handle);
 }
@@ -47,7 +46,6 @@ TEST(ADS1015, ADS1015_Wrong_Address) {
       .bus_handle = bus_handle.handle,
   };
 
-  EventGroupHandle_t event_group = xEventGroupCreate();
-  esp_err_t err = ads1015_init(&handle, &config, event_group);
+  esp_err_t err = ads1015_init(&handle, &config);
   TEST_ASSERT_NOT_EQUAL(ESP_OK, err);
 }
