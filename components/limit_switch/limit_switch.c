@@ -9,13 +9,23 @@
 static void IRAM_ATTR limit_switch_isr(void* arg) {
   BaseType_t higher_priority_task_woken = pdFALSE;
 
-  xEventGroupSetBitsFromISR(g_motor_events, LIMIT_MOTOR_0,
+  xEventGroupSetBitsFromISR(g_motor_events, LIMIT_0,
                             &higher_priority_task_woken);
   portYIELD_FROM_ISR(higher_priority_task_woken);
 }
 
-esp_err_t limit_switch_init(const limit_switch_config_t* config,
-                            EventGroupHandle_t events) {
+void test_task(void* arg) {
+  while (1) {
+    xEventGroupWaitBits(g_motor_events, EVENT_ANY,
+                        pdTRUE,  // don't clear bits on exit
+                        pdFALSE,  // any bit (OR)
+                        portMAX_DELAY);
+    
+    ESP_LOGI(TAG, "Motor event detected, bits=0x%06lX", (unsigned long)xEventGroupGetBits(g_motor_events));
+  }
+}
+
+esp_err_t limit_switch_init(const limit_switch_config_t* config) {
   if (!config) {
     return ESP_ERR_INVALID_ARG;
   }
@@ -32,6 +42,9 @@ esp_err_t limit_switch_init(const limit_switch_config_t* config,
   ESP_ERROR_CHECK(gpio_config(&io_conf));
   ESP_ERROR_CHECK(
       gpio_isr_handler_add(config->limit_gpio, limit_switch_isr, NULL));
+
+      
+  xTaskCreate(test_task, "test_task", 4096, NULL, 7, NULL);
 
   return ESP_OK;
 }

@@ -73,9 +73,6 @@ typedef struct {
  */
 typedef struct {
   pca9685_handle_t pca9685; /**< Handle for the underlying PCA9685 controller */
-  EventGroupHandle_t
-      events;               /**< Event group handle for motor fault signaling */
-  EventBits_t stop_bits;    /**< Which bits trigger motor stop */
   uint16_t polar_pan_speed; /**< Speed to use for polar pan movements */
 } motorhat_handle_t;
 
@@ -105,7 +102,6 @@ static const motorhat_motor_channels_t motor_channels[MOTORHAT_NUM_MOTORS] = {
  * @param[out] handle Pointer to Motor HAT handle structure
  * @param[in] config Pointer to configuration structure containing PCA9685
  * settings
- * @param[in] events Event group handle for signaling motor faults
  *
  * @return
  *    - ESP_OK: Success
@@ -116,8 +112,7 @@ static const motorhat_motor_channels_t motor_channels[MOTORHAT_NUM_MOTORS] = {
  *       pca9685_handle_t structure before calling this function
  */
 esp_err_t motorhat_init(motorhat_handle_t* handle,
-                        const motorhat_config_t* config,
-                        EventGroupHandle_t events);
+                        const motorhat_config_t* config);
 
 /**
  * @brief Polar pan command

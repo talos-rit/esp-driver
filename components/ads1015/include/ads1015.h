@@ -133,8 +133,6 @@ typedef struct {
 typedef struct {
   i2c_master_dev_handle_t dev_handle; /**< I2C device handle */
   uint16_t config_reg;                /**< ADS1015 config register values */
-  EventGroupHandle_t
-      events; /**< Event group handle for signaling overcurrent events */
 } ads1015_handle_t;
 
 /**
@@ -145,7 +143,6 @@ typedef struct {
  *
  * @param[out] handle Pointer to ADS1015 handle structure
  * @param[in] config Pointer to configuration structure
- * @param[in] events Event group handle for signaling overcurrent events
  *
  * @return
  *    - ESP_OK: Success
@@ -153,8 +150,7 @@ typedef struct {
  * frequency)
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
-esp_err_t ads1015_init(ads1015_handle_t* handle, const ads1015_config_t* config,
-                       EventGroupHandle_t events);
+esp_err_t ads1015_init(ads1015_handle_t* handle, const ads1015_config_t* config);
 
 /**
  * @brief Check the ADC value against the configured threshholds and trigger

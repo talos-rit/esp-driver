@@ -56,7 +56,7 @@ void app_main(void) {
   limit_switch_config_t limit_switch_config = {
       .limit_gpio = CONFIG_DRIVER_LIMIT_SWITCH_PIN,
   };
-  ESP_ERROR_CHECK(limit_switch_init(&limit_switch_config, g_motor_events));
+  ESP_ERROR_CHECK(limit_switch_init(&limit_switch_config));
 
   // Initialize current sensing
   ads1015_handle_t ads;
@@ -67,7 +67,7 @@ void app_main(void) {
       .bus_handle = bus.handle,
       .adc_data_rate = CONFIG_DRIVER_ADS1015_DATA_RATE,
   };
-  ESP_ERROR_CHECK(ads1015_init(&ads, &ads_config, g_motor_events));
+  ESP_ERROR_CHECK(ads1015_init(&ads, &ads_config));
 
   // Initialize encoders
   encoder_handle_t encoder;
@@ -94,7 +94,7 @@ void app_main(void) {
       .polar_pan_speed =
           PCA9685_PWM_MAX * atof(CONFIG_DRIVER_MOTORHAT_PAN_SPEED),
   };
-  ESP_ERROR_CHECK(motorhat_init(&motorhat, &motorhat_config, g_motor_events));
+  ESP_ERROR_CHECK(motorhat_init(&motorhat, &motorhat_config));
 
   // Initialize Wi-Fi and socket connection
   driver_wifi_config_t wifi_config = {
@@ -122,6 +122,7 @@ void app_main(void) {
     if (err != ESP_OK) {
       ESP_LOGE(TAG, "Failed to get encoder count: %s", esp_err_to_name(err));
     }
+    // ESP_LOGI(TAG, "Encoder pulse count: %i", pulse_count);
 
     vTaskDelay(pdMS_TO_TICKS(10));  // Avoid busy loop
 

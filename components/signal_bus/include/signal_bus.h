@@ -5,19 +5,29 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 
-// Motor limit switch and fault event bits
-#define LIMIT_MOTOR_0 (1 << 0)
-#define LIMIT_MOTOR_1 (1 << 1)
-#define LIMIT_MOTOR_2 (1 << 2)
-#define LIMIT_MOTOR_3 (1 << 3)
-#define LIMIT_MOTOR_4 (1 << 4)
-#define LIMIT_MOTOR_5 (1 << 5)
-#define LIMIT_MOTOR_6 (1 << 6)
-#define ESTOP_OVERCURRENT (1 << 7)
+// Motor event bits
+#define CURRENT_0   (1 << 0)
+#define CURRENT_1   (1 << 1)
+#define CURRENT_2   (1 << 2)
+#define CURRENT_3   (1 << 3)
+#define CURRENT_4   (1 << 4)
+#define CURRENT_5   (1 << 5)
+#define CURRENT_6   (1 << 6)
 
-#define ESTOP_ANY (ESTOP_OVERCURRENT)
-#define LIMIT_ANY (0x7F)  // bits 0-6
-#define FAULT_ANY (LIMIT_ANY | ESTOP_ANY)
+#define LIMIT_0 (1 << 7)
+#define LIMIT_1 (1 << 8)
+#define LIMIT_2 (1 << 9)
+#define LIMIT_3 (1 << 10)
+#define LIMIT_4 (1 << 11)
+#define LIMIT_5 (1 << 12)
+#define LIMIT_6 (1 << 13)
+
+#define HOMING_FLAG (1 << 14)
+
+#define CURRENT_ANY (0x007F)  // bits 0-6
+#define LIMIT_ANY   (0x3F80)  // bits 7-13
+#define HOME_EVENT  (CURRENT_ANY | LIMIT_ANY)
+#define EVENT_ANY   (HOME_EVENT | HOMING_FLAG)
 
 extern EventGroupHandle_t g_motor_events;
 

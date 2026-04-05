@@ -20,7 +20,7 @@ void motor_stop_task(void* args) {
 
   while (1) {
     // Block indefinitely until any stop bit is set
-    xEventGroupWaitBits(handle->events, handle->stop_bits,
+    xEventGroupWaitBits(g_motor_events, CURRENT_ANY,
                         pdFALSE,  // don't clear bits on exit
                         pdFALSE,  // any bit (OR)
                         portMAX_DELAY);
@@ -28,22 +28,19 @@ void motor_stop_task(void* args) {
     motorhat_emergency_stop(handle);
 
     // Wait until all stop bits are cleared before watching again
-    xEventGroupWaitBits(handle->events, handle->stop_bits, pdFALSE,
+    xEventGroupWaitBits(g_motor_events, CURRENT_ANY, pdFALSE,
                         pdTRUE,  // all bits (AND)
                         portMAX_DELAY);
   }
 }
 
 esp_err_t motorhat_init(motorhat_handle_t* handle,
-                        const motorhat_config_t* config,
-                        EventGroupHandle_t events) {
+                        const motorhat_config_t* config) {
   if (handle == NULL || config == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
 
   s_handle = handle;
-  handle->events = events;
-  handle->stop_bits = ESTOP_ANY;
   handle->polar_pan_speed = config->polar_pan_speed;
 
   xTaskCreate(motor_stop_task, "motor_stop_task", 4096, handle, 8, NULL);
@@ -54,18 +51,59 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
 
 // Socket commands
 esp_err_t motorhat_home(uint16_t delay_ms) {
+  if (xEventGroupGetBits(g_motor_events) & HOMING_FLAG) {
+    ESP_LOGW(TAG, "Homing in progress, cannot send commands");
+    return ESP_ERR_INVALID_STATE;
+  }
+  
+  if (s_handle == NULL) return ESP_ERR_INVALID_STATE;
+
   ESP_LOGI(TAG, "Received home command: delay_ms=%d", delay_ms);
-  // TODO: Implement homing logic using motorhat_set_motor_direction,
-  // motorhat_set_motor_speed, and limit switch state from signal bus
+
+  // Set homing flag
+  xEventGroupSetBits(g_motor_events, HOMING_FLAG);
+
+  // Add delay
+  vTaskDelay(pdMS_TO_TICKS(delay_ms));
+
+  // Stop any movement before homing
+  for (int m = MOTORHAT_MOTOR1; m < MOTORHAT_NUM_MOTORS; m++) {
+    motorhat_set_motor_speed(s_handle, m, 0);
+    motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_RELEASE);
+  }
+
+  // Home each motor individually until we candetermine which motor triggers limit switch and current events
+  for (int m = MOTORHAT_MOTOR1; m < MOTORHAT_NUM_MOTORS; m++) {
+
+    // motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BACKWARD);
+    // motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed / 2);
+
+    // xEventGroupWaitBits(g_motor_events, HOME_EVENT,
+    //                     pdTRUE,  // clear bits on exit
+    //                     pdFALSE,  // any bit (OR)
+    //                     portMAX_DELAY);
+
+    // TODO: React to homing event
+  }
+
+  // Clear homing flag
+  xEventGroupClearBits(g_motor_events, HOMING_FLAG);
+
   return ESP_OK;
 }
 
 esp_err_t motorhat_polar_pan(int16_t delta_azimuth, int16_t delta_altitude,
                              uint16_t delay_ms, uint16_t time_ms) {
-  ESP_LOGI(TAG,
-           "Received polar pan command: delta_azimuth=%d, delta_altitude=%d, "
-           "delay_ms=%d, time_ms=%d",
-           delta_azimuth, delta_altitude, delay_ms, time_ms);
+  if (xEventGroupGetBits(g_motor_events) & HOMING_FLAG) {
+    ESP_LOGW(TAG, "Homing in progress, cannot send commands");
+    return ESP_ERR_INVALID_STATE;
+  }
+
+  if (s_handle == NULL) return ESP_ERR_INVALID_STATE;
+
+  ESP_LOGI(TAG, "Received polar pan command: delta_azimuth=%d, delta_altitude=%d, delay_ms=%d, time_ms=%d", 
+    delta_azimuth, delta_altitude, delay_ms, time_ms);
+
   // TODO: Implement polar pan logic using motorhat_set_motor_direction and
   // motorhat_set_motor_speed
   return ESP_OK;
@@ -73,11 +111,14 @@ esp_err_t motorhat_polar_pan(int16_t delta_azimuth, int16_t delta_altitude,
 
 esp_err_t motorhat_polar_pan_start(int8_t delta_azimuth,
                                    int8_t delta_altitude) {
+  if (xEventGroupGetBits(g_motor_events) & HOMING_FLAG) {
+    ESP_LOGW(TAG, "Homing in progress, cannot send commands");
+    return ESP_ERR_INVALID_STATE;
+  }
+
   if (s_handle == NULL) return ESP_ERR_INVALID_STATE;
-  ESP_LOGI(
-      TAG,
-      "Received polar pan start command: delta_azimuth=%d, delta_altitude=%d",
-      delta_azimuth, delta_altitude);
+
+  ESP_LOGI(TAG, "Received polar pan start command: delta_azimuth=%d, delta_altitude=%d", delta_azimuth, delta_altitude);
 
   // Set both axes speed to 0 to prevent direction change while moving
   esp_err_t err =
@@ -119,7 +160,15 @@ esp_err_t motorhat_polar_pan_start(int8_t delta_azimuth,
 }
 
 esp_err_t motorhat_polar_pan_stop(void) {
+  if (xEventGroupGetBits(g_motor_events) & HOMING_FLAG) {
+    ESP_LOGW(TAG, "Homing in progress, cannot send commands");
+    return ESP_ERR_INVALID_STATE;
+  }
+
+  if (s_handle == NULL) return ESP_ERR_INVALID_STATE;
+
   ESP_LOGI(TAG, "Received polar pan stop command");
+
   for (int m = MOTORHAT_MOTOR1; m < MOTORHAT_NUM_MOTORS; m++) {
     motorhat_set_motor_speed(s_handle, m, 0);
     motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BRAKE);
@@ -135,7 +184,7 @@ esp_err_t motorhat_set_motor_speed(motorhat_handle_t* handle,
     return ESP_ERR_INVALID_ARG;
   }
 
-  if (xEventGroupGetBits(handle->events) & handle->stop_bits) {
+  if (xEventGroupGetBits(g_motor_events) & CURRENT_ANY) {
     ESP_LOGW(TAG, "Motor %d in fault state, cannot set speed", motor);
     return ESP_ERR_INVALID_STATE;
   }
@@ -158,7 +207,7 @@ esp_err_t motorhat_set_motor_direction(motorhat_handle_t* handle,
     return ESP_ERR_INVALID_ARG;
   }
 
-  if (xEventGroupGetBits(handle->events) & handle->stop_bits) {
+  if (xEventGroupGetBits(g_motor_events) & CURRENT_ANY) {
     ESP_LOGW(TAG, "Motor %d in fault state, cannot set direction", motor);
     return ESP_ERR_INVALID_STATE;
   }
@@ -207,7 +256,7 @@ esp_err_t motorhat_set_motor_direction(motorhat_handle_t* handle,
   return err;
 }
 
-// Emergency stop all motors that bypasses normal logic flow
+// Emergency stop on all motors that bypasses normal logic flow
 esp_err_t motorhat_emergency_stop(motorhat_handle_t* handle) {
   if (handle == NULL) {
     return ESP_ERR_INVALID_ARG;

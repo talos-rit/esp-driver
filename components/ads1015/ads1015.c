@@ -28,7 +28,6 @@ void adc_task(void* arg) {
   uint16_t config_reg =
       handle->config_reg |
       (1 << ADS1015_OS_BIT);  // Modify so that writing will start conversions
-  EventGroupHandle_t events = handle->events;
   bool mux_state =
       true;  // Differential input to read (true = A2-A3, false = A0-A1)
 
@@ -45,7 +44,7 @@ void adc_task(void* arg) {
       if (value >= CONFIG_ADS1015_HIGH_THRESH ||
           value <= CONFIG_ADS1015_LOW_THRESH) {
         ESP_LOGI(TAG, "Overcurrent detection fired");
-        xEventGroupSetBits(events, ESTOP_OVERCURRENT);
+        xEventGroupSetBits(g_motor_events, CURRENT_0);
       }
     }
 
@@ -59,8 +58,7 @@ void adc_task(void* arg) {
   }
 }
 
-esp_err_t ads1015_init(ads1015_handle_t* handle, const ads1015_config_t* config,
-                       EventGroupHandle_t events) {
+esp_err_t ads1015_init(ads1015_handle_t* handle, const ads1015_config_t* config) {
   if (handle == NULL || config == NULL) {
     return ESP_ERR_INVALID_ARG;
   }
@@ -101,7 +99,6 @@ esp_err_t ads1015_init(ads1015_handle_t* handle, const ads1015_config_t* config,
   }
 
   handle->config_reg = config_reg;
-  handle->events = events;
 
   // Configure alert GPIO and interrupt service
   gpio_config_t io_conf = {
