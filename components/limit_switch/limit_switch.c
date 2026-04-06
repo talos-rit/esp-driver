@@ -7,22 +7,20 @@
 #define TAG "limit_switch"
 
 static void IRAM_ATTR limit_switch_isr(void* arg) {
+  limit_switch_config_t* config = (limit_switch_config_t*)arg;
   BaseType_t higher_priority_task_woken = pdFALSE;
 
-  xEventGroupSetBitsFromISR(g_motor_events, LIMIT_0,
-                            &higher_priority_task_woken);
-  portYIELD_FROM_ISR(higher_priority_task_woken);
-}
-
-void test_task(void* arg) {
-  while (1) {
-    xEventGroupWaitBits(g_motor_events, EVENT_ANY,
-                        pdTRUE,  // don't clear bits on exit
-                        pdFALSE,  // any bit (OR)
-                        portMAX_DELAY);
-    
-    ESP_LOGI(TAG, "Motor event detected, bits=0x%06lX", (unsigned long)xEventGroupGetBits(g_motor_events));
+  int level = gpio_get_level(config->limit_gpio);
+  if (level) {
+    // Limit switch released, clear corresponding bit
+    xEventGroupClearBitsFromISR(g_motor_events, LIMIT_0);
+  } else {
+    // Limit switch triggered, set corresponding bit
+    xEventGroupSetBitsFromISR(g_motor_events, LIMIT_0,
+                              &higher_priority_task_woken);
   }
+      
+  portYIELD_FROM_ISR(higher_priority_task_woken);
 }
 
 esp_err_t limit_switch_init(const limit_switch_config_t* config) {
@@ -32,7 +30,7 @@ esp_err_t limit_switch_init(const limit_switch_config_t* config) {
 
   // Configure GPIO interrupt service
   gpio_config_t io_conf = {
-      .intr_type = GPIO_INTR_NEGEDGE,
+      .intr_type = GPIO_INTR_ANYEDGE,
       .mode = GPIO_MODE_INPUT,
       .pin_bit_mask = 1ULL << config->limit_gpio,
       .pull_up_en = GPIO_PULLUP_ENABLE,
@@ -40,11 +38,7 @@ esp_err_t limit_switch_init(const limit_switch_config_t* config) {
   };
 
   ESP_ERROR_CHECK(gpio_config(&io_conf));
-  ESP_ERROR_CHECK(
-      gpio_isr_handler_add(config->limit_gpio, limit_switch_isr, NULL));
-
-      
-  xTaskCreate(test_task, "test_task", 4096, NULL, 7, NULL);
+  ESP_ERROR_CHECK(gpio_isr_handler_add(config->limit_gpio, limit_switch_isr, (void*)config));
 
   return ESP_OK;
 }
