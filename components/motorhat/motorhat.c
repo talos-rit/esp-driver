@@ -77,7 +77,7 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
     int m = axis_motor[axis];
     ESP_LOGI(TAG, "Homing motor %d", m);
 
-    motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_FORWARD);
+    motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BACKWARD);
     motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed);
 
     EventBits_t bits = xEventGroupWaitBits(g_motor_events, HOME_EVENT,
@@ -95,7 +95,7 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
       vTaskDelay(pdMS_TO_TICKS(200));
 
       // Switch directions and move towards limit switch
-      motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BACKWARD);
+      motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_FORWARD);
       motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed);
 
       bits = xEventGroupWaitBits(g_motor_events, HOME_EVENT,
@@ -121,6 +121,7 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
         // Homing finished, idle motor and reset encoder value
         motorhat_set_motor_speed(s_handle, m, 0);
         motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_RELEASE);
+        //TODO: reset encoder
 
       } else {
         ESP_LOGW(TAG, "Motor %d unexpected homing event detected", m);
@@ -142,7 +143,7 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
       vTaskDelay(pdMS_TO_TICKS(200));
 
       // Turn around and move slowly to find limit switch release
-      motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BACKWARD);
+      motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_FORWARD);
       motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed / 3);
 
       // Wait until limit switch engages again
@@ -151,7 +152,7 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
                         pdFALSE,  // any bit (OR)
                         portMAX_DELAY);
       
-      // Check if it's a limit switch we weren't expecting just in case
+      // Check if it was an event we weren't expecting just in case
       if (!(bits & LIMIT_ANY)){
         ESP_LOGW(TAG, "Motor %d unexpected homing event detected", m);
         motorhat_emergency_stop(s_handle);
@@ -166,6 +167,7 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
       // Homing finished, idle motor and reset encoder value
       motorhat_set_motor_speed(s_handle, m, 0);
       motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_RELEASE);
+      // TODO: Reset encoder value
 
     } else {
       ESP_LOGW(TAG, "Motor %d unexpected homing event detected", m);

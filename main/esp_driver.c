@@ -70,16 +70,27 @@ void app_main(void) {
   ESP_ERROR_CHECK(ads1015_init(&ads, &ads_config));
 
   // Initialize encoders
-  encoder_handle_t encoder;
-  encoder_config_t encoder_config = {
-      .P0_pin = CONFIG_ENCODER_0_P0_PIN,
-      .P1_pin = CONFIG_ENCODER_0_P1_PIN,
+  encoder_handle_t encoder_axis1;
+  encoder_config_t encoder_axis1_config = {
+      .P0_pin = 36,
+      .P1_pin = 39,
       .resolution = CONFIG_ENCODER_0_RESOLUTION,
       .glitch_filter_ns = CONFIG_ENCODER_GLITCH_FILTER,
       .invert_angle = CONFIG_ENCODER_0_ANGLE_INVERT,
   };
-  ESP_ERROR_CHECK(encoder_init(&encoder, &encoder_config));
-  ESP_ERROR_CHECK(encoder_start(&encoder));
+  ESP_ERROR_CHECK(encoder_init(&encoder_axis1, &encoder_axis1_config));
+  ESP_ERROR_CHECK(encoder_start(&encoder_axis1));
+
+  encoder_handle_t encoder_axis2;
+  encoder_config_t encoder_axis2_config = {
+      .P0_pin = 34,
+      .P1_pin = 35,
+      .resolution = CONFIG_ENCODER_0_RESOLUTION,
+      .glitch_filter_ns = CONFIG_ENCODER_GLITCH_FILTER,
+      .invert_angle = CONFIG_ENCODER_0_ANGLE_INVERT,
+  };
+  ESP_ERROR_CHECK(encoder_init(&encoder_axis2, &encoder_axis2_config));
+  ESP_ERROR_CHECK(encoder_start(&encoder_axis2));
 
   // Initialize motor controller
   motorhat_handle_t motorhat;
@@ -115,16 +126,21 @@ void app_main(void) {
   ESP_ERROR_CHECK(
       driver_socket_init(&socket_handle, &socket_config, &motor_interface));
 
-  int pulse_count;
+  int axis1_count;
+  int axis2_count;
 
   while (1) {
-    esp_err_t err = encoder_get_raw_count(&encoder, &pulse_count);
+    esp_err_t err = encoder_get_raw_count(&encoder_axis1, &axis1_count);
     if (err != ESP_OK) {
       ESP_LOGE(TAG, "Failed to get encoder count: %s", esp_err_to_name(err));
     }
-    // ESP_LOGI(TAG, "Encoder pulse count: %i", pulse_count);
+    err = encoder_get_raw_count(&encoder_axis2, &axis2_count);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "Failed to get encoder count: %s", esp_err_to_name(err));
+    }
+    // ESP_LOGI(TAG, "Axis 1 count: %i       Axis 2 count: %i", axis1_count, axis2_count);
 
-    vTaskDelay(pdMS_TO_TICKS(10));  // Avoid busy loop
+    vTaskDelay(pdMS_TO_TICKS(500));  // Avoid busy loop
 
     // This loop can also be used to add periodic tasks like reading sensors, or
     // checking limit switches. However, it must not terminate or structs
