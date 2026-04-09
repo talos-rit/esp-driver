@@ -27,6 +27,18 @@ static const driver_socket_api_motor_interface_t motor_interface = {
     .home = motorhat_home,
 };
 
+typedef struct {
+    encoder_handle_t* encoders;
+    int count;
+} encoder_array_t;
+
+void clear_all_encoders(void* ctx) {
+    encoder_array_t* arr = (encoder_array_t*)ctx;
+    for (int i = 0; i < arr->count; i++) {
+        encoder_clear_count(&arr->encoders[i]);
+    }
+}
+
 void app_main(void) {
   // Initialize NVS
   esp_err_t ret = nvs_flash_init();
@@ -70,7 +82,7 @@ void app_main(void) {
   ESP_ERROR_CHECK(ads1015_init(&ads, &ads_config));
 
   // Initialize encoders
-  encoder_handle_t encoder_axis1;
+  encoder_handle_t encoders[2];
   encoder_config_t encoder_axis1_config = {
       .P0_pin = 36,
       .P1_pin = 39,
@@ -78,10 +90,9 @@ void app_main(void) {
       .glitch_filter_ns = CONFIG_ENCODER_GLITCH_FILTER,
       .invert_angle = CONFIG_ENCODER_0_ANGLE_INVERT,
   };
-  ESP_ERROR_CHECK(encoder_init(&encoder_axis1, &encoder_axis1_config));
-  ESP_ERROR_CHECK(encoder_start(&encoder_axis1));
+  ESP_ERROR_CHECK(encoder_init(&encoders[0], &encoder_axis1_config));
+  ESP_ERROR_CHECK(encoder_start(&encoders[0]));
 
-  encoder_handle_t encoder_axis2;
   encoder_config_t encoder_axis2_config = {
       .P0_pin = 34,
       .P1_pin = 35,
@@ -89,8 +100,13 @@ void app_main(void) {
       .glitch_filter_ns = CONFIG_ENCODER_GLITCH_FILTER,
       .invert_angle = CONFIG_ENCODER_0_ANGLE_INVERT,
   };
-  ESP_ERROR_CHECK(encoder_init(&encoder_axis2, &encoder_axis2_config));
-  ESP_ERROR_CHECK(encoder_start(&encoder_axis2));
+  ESP_ERROR_CHECK(encoder_init(&encoders[1], &encoder_axis2_config));
+  ESP_ERROR_CHECK(encoder_start(&encoders[1]));
+
+  encoder_array_t encoder_array = {
+    .encoders = encoders,
+    .count = 2,
+};
 
   // Initialize motor controller
   motorhat_handle_t motorhat;
@@ -104,6 +120,8 @@ void app_main(void) {
           },
       .polar_pan_speed =
           PCA9685_PWM_MAX * atof(CONFIG_DRIVER_MOTORHAT_PAN_SPEED),
+      .encoder_cb = (motorhat_encoder_cb_t)clear_all_encoders,
+      .encoder_ctx = &encoder_array,
   };
   ESP_ERROR_CHECK(motorhat_init(&motorhat, &motorhat_config));
 
@@ -130,15 +148,15 @@ void app_main(void) {
   int axis2_count;
 
   while (1) {
-    esp_err_t err = encoder_get_raw_count(&encoder_axis1, &axis1_count);
+    esp_err_t err = encoder_get_raw_count(&encoders[0], &axis1_count);
     if (err != ESP_OK) {
       ESP_LOGE(TAG, "Failed to get encoder count: %s", esp_err_to_name(err));
     }
-    err = encoder_get_raw_count(&encoder_axis2, &axis2_count);
+    err = encoder_get_raw_count(&encoders[1], &axis2_count);
     if (err != ESP_OK) {
       ESP_LOGE(TAG, "Failed to get encoder count: %s", esp_err_to_name(err));
     }
-    // ESP_LOGI(TAG, "Axis 1 count: %i       Axis 2 count: %i", axis1_count, axis2_count);
+    ESP_LOGI(TAG, "Axis 1 count: %i       Axis 2 count: %i", axis1_count, axis2_count);
 
     vTaskDelay(pdMS_TO_TICKS(500));  // Avoid busy loop
 

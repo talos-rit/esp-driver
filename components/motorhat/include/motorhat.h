@@ -38,6 +38,11 @@ static const motorhat_motor_t axis_motor[MOTORHAT_NUM_AXES] = {
 };
 
 /**
+ * @brief Function callback for clearing encoder count
+ */
+typedef void (*motorhat_encoder_cb_t)(void* ctx);
+
+/**
  * @brief Motor direction and state control
  */
 typedef enum {
@@ -66,6 +71,8 @@ typedef struct {
 typedef struct {
   pca9685_config_t pca9685_config;
   uint16_t polar_pan_speed; /**< Speed to use for polar pan movements */
+  motorhat_encoder_cb_t encoder_cb; /**< Clear encoder count function callback */
+  void* encoder_ctx; /** < Clear encoder count callback context (the encoder handle) */
 } motorhat_config_t;
 
 /**
@@ -74,6 +81,8 @@ typedef struct {
 typedef struct {
   pca9685_handle_t pca9685; /**< Handle for the underlying PCA9685 controller */
   uint16_t polar_pan_speed; /**< Speed to use for polar pan movements */
+  motorhat_encoder_cb_t encoder_cb; /**< Clear encoder count function callback */
+  void* encoder_ctx; /** < Clear encoder count callback context (the encoder handle) */
 } motorhat_handle_t;
 
 /**

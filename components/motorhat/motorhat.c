@@ -42,6 +42,8 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
 
   s_handle = handle;
   handle->polar_pan_speed = config->polar_pan_speed;
+  handle->encoder_cb = config->encoder_cb;
+  handle->encoder_ctx = config->encoder_ctx;
 
   xTaskCreate(motor_stop_task, "motor_stop_task", 4096, handle, 8, NULL);
 
@@ -77,39 +79,45 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
     int m = axis_motor[axis];
     ESP_LOGI(TAG, "Homing motor %d", m);
 
-    motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BACKWARD);
+    motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_FORWARD);
     motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed);
 
-    EventBits_t bits = xEventGroupWaitBits(g_motor_events, HOME_EVENT,
-                        pdTRUE,  // clear bits on exit
-                        pdFALSE,  // any bit (OR)
-                        portMAX_DELAY);
+    EventBits_t bits = xEventGroupWaitBits(
+      g_motor_events, 
+      HOME_EVENT, 
+      pdTRUE, 
+      pdFALSE, 
+      portMAX_DELAY
+    );
 
     // Stop when a homing event is detected
     motorhat_set_motor_speed(s_handle, m, 0);
 
     if (bits & CURRENT_ANY) {
-      ESP_LOGI(TAG, "Motor %d hit the backward end of its range", m);
+      ESP_LOGI(TAG, "Motor %d hit the forward end of its range", m);
       
       // Small pause before going opposite direction
       vTaskDelay(pdMS_TO_TICKS(200));
 
       // Switch directions and move towards limit switch
-      motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_FORWARD);
+      motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BACKWARD);
       motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed);
 
-      bits = xEventGroupWaitBits(g_motor_events, HOME_EVENT,
-                        pdTRUE,  // clear bits on exit
-                        pdFALSE,  // any bit (OR)
-                        portMAX_DELAY);
+      bits = xEventGroupWaitBits(
+        g_motor_events, 
+        HOME_EVENT,
+        pdTRUE, 
+        pdFALSE, 
+        portMAX_DELAY
+      );
       
       // Stop when a homing event is detected
       motorhat_set_motor_speed(s_handle, m, 0);
 
       if (bits & LIMIT_ANY) {
-        ESP_LOGI(TAG, "Motor %d hit a limit switch moving forward", m);
+        ESP_LOGI(TAG, "Motor %d hit a limit switch moving backward", m);
 
-        // Continue forward slowly to find limit switch release
+        // Continue forward slowly until limit switch releases
         motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed / 3);
 
         // Detect limit switch release by polling
@@ -118,10 +126,9 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
         }
         ESP_LOGI(TAG, "Motor %d finished homing", m);
         
-        // Homing finished, idle motor and reset encoder value
+        // Homing finished, stop the motor and continue sequence
         motorhat_set_motor_speed(s_handle, m, 0);
         motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_RELEASE);
-        //TODO: reset encoder
 
       } else {
         ESP_LOGW(TAG, "Motor %d unexpected homing event detected", m);
@@ -129,34 +136,14 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
       }
 
     } else if (bits & LIMIT_ANY) {
-      ESP_LOGI(TAG, "Motor %d hit a limit switch moving backward", m);
-
-      // Keep moving to the other side of the limit switch
-      motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed / 1.5);
-      while (!gpio_get_level(CONFIG_DRIVER_LIMIT_SWITCH_PIN)) {
-        vTaskDelay(pdMS_TO_TICKS(10));
-      }
-      motorhat_set_motor_speed(s_handle, m, 0);
-      ESP_LOGI(TAG, "Motor %d went past the limit switch", m);
+      ESP_LOGI(TAG, "Motor %d hit a limit switch moving forward", m);
 
       // Small pause before going the opposite direction
       vTaskDelay(pdMS_TO_TICKS(200));
 
-      // Turn around and move slowly to find limit switch release
-      motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_FORWARD);
+      // Turn around and move slowly until limit switch releases
+      motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BACKWARD);
       motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed / 3);
-
-      // Wait until limit switch engages again
-      bits = xEventGroupWaitBits(g_motor_events, HOME_EVENT,
-                        pdTRUE,  // clear bits on exit
-                        pdFALSE,  // any bit (OR)
-                        portMAX_DELAY);
-      
-      // Check if it was an event we weren't expecting just in case
-      if (!(bits & LIMIT_ANY)){
-        ESP_LOGW(TAG, "Motor %d unexpected homing event detected", m);
-        motorhat_emergency_stop(s_handle);
-      }
 
       // Detect limit switch release by polling
       while (!gpio_get_level(CONFIG_DRIVER_LIMIT_SWITCH_PIN)) {
@@ -164,21 +151,26 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
       }
       ESP_LOGI(TAG, "Motor %d finished homing", m);
 
-      // Homing finished, idle motor and reset encoder value
+      // Homing finished, stop the motor and continue sequence
       motorhat_set_motor_speed(s_handle, m, 0);
       motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_RELEASE);
-      // TODO: Reset encoder value
 
     } else {
       ESP_LOGW(TAG, "Motor %d unexpected homing event detected", m);
       motorhat_emergency_stop(s_handle);
     }
   }
+  
+  // Reset encoder values
+  if (s_handle->encoder_cb) {
+      s_handle->encoder_cb(s_handle->encoder_ctx);
+      ESP_LOGI(TAG, "Homing successful, encoders reset");
+  } else {
+      ESP_LOGW(TAG, "Encoder reset callback not found, homing unsuccessful");
+  }
 
   // Clear homing flag
   xEventGroupClearBits(g_motor_events, HOMING_FLAG);
-
-  ESP_LOGI(TAG, "Motor event bits=0x%06lX", (unsigned long)xEventGroupGetBits(g_motor_events));
 
   return ESP_OK;
 }
