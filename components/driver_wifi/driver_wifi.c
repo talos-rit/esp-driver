@@ -1,4 +1,5 @@
 #include "driver_wifi.h"
+
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
@@ -18,13 +19,13 @@
 #elif CONFIG_DRIVER_WIFI_SAE_PWE_H2E
 
 #define DRIVER_WIFI_SAE_MODE WPA3_SAE_PWE_HASH_TO_ELEMENT
-#define DRIVER_WIFI_SAE_PASSWORD_IDENTIFIER                                    \
+#define DRIVER_WIFI_SAE_PASSWORD_IDENTIFIER \
   CONFIG_DRIVER_WIFI_SAE_PASSWORD_IDENTIFIER
 
 #elif CONFIG_DRIVER_WIFI_SAE_PWE_BOTH
 
 #define DRIVER_WIFI_SAE_MODE WPA3_SAE_PWE_BOTH
-#define DRIVER_WIFI_SAE_PASSWORD_IDENTIFIER                                    \
+#define DRIVER_WIFI_SAE_PASSWORD_IDENTIFIER \
   CONFIG_DRIVER_WIFI_SAE_PASSWORD_IDENTIFIER
 
 #endif
@@ -59,7 +60,7 @@
 
 #endif
 
-static const char *TAG = "DRIVER_WIFI";
+static const char* TAG = "DRIVER_WIFI";
 
 /* FreeRTOS event group to signal when we are connected*/
 static EventGroupHandle_t s_wifi_event_group;
@@ -73,8 +74,8 @@ static EventGroupHandle_t s_wifi_event_group;
 
 static int s_retry_num = 0;
 
-static void event_handler(void *arg, esp_event_base_t event_base,
-                          int32_t event_id, void *event_data) {
+static void event_handler(void* arg, esp_event_base_t event_base,
+                          int32_t event_id, void* event_data) {
   if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
     esp_wifi_connect();
   } else if (event_base == WIFI_EVENT &&
@@ -88,15 +89,14 @@ static void event_handler(void *arg, esp_event_base_t event_base,
     }
     ESP_LOGI(TAG, "connect to the AP fail");
   } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-    ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+    ip_event_got_ip_t* event = (ip_event_got_ip_t*)event_data;
     ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
     s_retry_num = 0;
     xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
   }
 }
 
-esp_err_t wifi_init(driver_wifi_config_t *config) {
-
+esp_err_t wifi_init(driver_wifi_config_t* config) {
   s_wifi_event_group = xEventGroupCreate();
   if (s_wifi_event_group == NULL) {
     ESP_LOGE(TAG, "Unable to create wifi event group");

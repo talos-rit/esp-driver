@@ -1,10 +1,11 @@
 #include "driver_socket.h"
+
+#include "driver_socket_api.h"
+#include "endian.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "netdb.h"
 #include "sys/socket.h"
-#include "driver_socket_api.h"
-#include "endian.h"
 
 #define TAG "driver_socket"
 #define INVALID_SOCK -1
@@ -20,12 +21,12 @@
  */
 #define YIELD_TO_ALL_MS 50
 
-void driver_socket_task(void *arg) {
+void driver_socket_task(void* arg) {
   static uint8_t rx_buffer[128];
-  task_args_t *task_args = (task_args_t *)arg;
-  SemaphoreHandle_t *server_ready = &task_args->server_ready;
+  task_args_t* task_args = (task_args_t*)arg;
+  SemaphoreHandle_t* server_ready = &task_args->server_ready;
   struct addrinfo hints = {.ai_socktype = SOCK_STREAM};
-  struct addrinfo *address_info;
+  struct addrinfo* address_info;
   int listen_sock = INVALID_SOCK;
   const size_t max_socks = CONFIG_LWIP_MAX_SOCKETS - 1;
   static int sock[CONFIG_LWIP_MAX_SOCKETS - 1];
@@ -87,7 +88,7 @@ void driver_socket_task(void *arg) {
 
   // Main loop for accepting new connections and serving all connected clients
   while (1) {
-    struct sockaddr_storage source_addr; // Large enough for both IPv4 or IPv6
+    struct sockaddr_storage source_addr;  // Large enough for both IPv4 or IPv6
     socklen_t addr_len = sizeof(source_addr);
 
     // Find a free socket
@@ -102,13 +103,13 @@ void driver_socket_task(void *arg) {
     if (new_sock_index < max_socks) {
       // Try to accept a new connections
       sock[new_sock_index] =
-          accept(listen_sock, (struct sockaddr *)&source_addr, &addr_len);
+          accept(listen_sock, (struct sockaddr*)&source_addr, &addr_len);
 
       if (sock[new_sock_index] < 0) {
         if (errno ==
-            EWOULDBLOCK) { // The listener socket did not accepts any connection
-                           // continue to serve open connections and try to
-                           // accept again upon the next iteration
+            EWOULDBLOCK) {  // The listener socket did not accepts any
+                            // connection continue to serve open connections and
+                            // try to accept again upon the next iteration
           ESP_LOGV(TAG, "No pending connections...");
         } else {
           log_socket_error(TAG, listen_sock, errno,
@@ -135,7 +136,6 @@ void driver_socket_task(void *arg) {
     // We serve all the connected clients in this loop
     for (int i = 0; i < max_socks; ++i) {
       if (sock[i] != INVALID_SOCK) {
-
         // This is an open socket -> try to serve it
         int len = try_receive(TAG, sock[i], rx_buffer, sizeof(rx_buffer));
         if (len < 0) {
@@ -168,8 +168,8 @@ void driver_socket_task(void *arg) {
           }
         }
 
-      } // one client's socket
-    } // for all sockets
+      }  // one client's socket
+    }  // for all sockets
 
     // Yield to other tasks
     vTaskDelay(pdMS_TO_TICKS(YIELD_TO_ALL_MS));
@@ -190,10 +190,19 @@ error:
   vTaskDelete(NULL);
 }
 
-esp_err_t driver_socket_init(driver_socket_handle_t *socket_handle,
-                             const driver_socket_config_t *config) {
+esp_err_t driver_socket_init(
+    driver_socket_handle_t* socket_handle, const driver_socket_config_t* config,
+    const driver_socket_api_motor_interface_t* motor_interface) {
+  if (socket_handle == NULL || config == NULL || motor_interface == NULL) {
+    return ESP_ERR_INVALID_ARG;
+  }
 
-  task_args_t *task_args = malloc(sizeof(task_args_t));
+  esp_err_t ret = driver_socket_api_init(motor_interface);
+  if (ret != ESP_OK) {
+    return ret;
+  }
+
+  task_args_t* task_args = malloc(sizeof(task_args_t));
   if (task_args == NULL) {
     ESP_LOGE(TAG, "Unable to allocate memory for task arguments");
     return ESP_ERR_NO_MEM;
@@ -219,44 +228,44 @@ esp_err_t driver_socket_init(driver_socket_handle_t *socket_handle,
   return ESP_OK;
 }
 
-void log_socket_error(const char *tag, const int sock, const int err,
-                             const char *message) {
+void log_socket_error(const char* tag, const int sock, const int err,
+                      const char* message) {
   ESP_LOGE(tag,
            "[sock=%d]: %s\n"
            "error=%d: %s",
            sock, message, err, strerror(err));
 }
 
-char *get_clients_address(struct sockaddr_storage *source_addr) {
+char* get_clients_address(struct sockaddr_storage* source_addr) {
   static char address_str[128];
-  char *res = NULL;
+  char* res = NULL;
   // Convert ip address to string
   if (source_addr->ss_family == PF_INET) {
-    res = inet_ntoa_r(((struct sockaddr_in *)source_addr)->sin_addr,
-                      address_str, sizeof(address_str) - 1);
+    res = inet_ntoa_r(((struct sockaddr_in*)source_addr)->sin_addr, address_str,
+                      sizeof(address_str) - 1);
   }
 #ifdef CONFIG_LWIP_IPV6
   else if (source_addr->ss_family == PF_INET6) {
-    res = inet6_ntoa_r(((struct sockaddr_in6 *)source_addr)->sin6_addr,
+    res = inet6_ntoa_r(((struct sockaddr_in6*)source_addr)->sin6_addr,
                        address_str, sizeof(address_str) - 1);
   }
 #endif
   if (!res) {
-    address_str[0] = '\0'; // Returns empty string if conversion didn't succeed
+    address_str[0] = '\0';  // Returns empty string if conversion didn't succeed
   }
   return address_str;
 }
 
-int try_receive(const char *tag, const int sock, uint8_t *data,
-                       size_t max_len) {
+int try_receive(const char* tag, const int sock, uint8_t* data,
+                size_t max_len) {
   int len = recv(sock, data, max_len, 0);
   if (len < 0) {
     if (errno == EINPROGRESS || errno == EAGAIN || errno == EWOULDBLOCK) {
-      return 0; // Not an error
+      return 0;  // Not an error
     }
     if (errno == ENOTCONN) {
       ESP_LOGW(tag, "[sock=%d]: Connection closed", sock);
-      return -2; // Socket has been disconnected
+      return -2;  // Socket has been disconnected
     }
     log_socket_error(tag, sock, errno, "Error occurred during receiving");
     return -1;
@@ -265,16 +274,17 @@ int try_receive(const char *tag, const int sock, uint8_t *data,
   return len;
 }
 
-int socket_send(const char *tag, const int sock, const uint8_t * data, const size_t len)
-{
-    int to_write = len;
-    while (to_write > 0) {
-        int written = send(sock, data + (len - to_write), to_write, 0);
-        if (written < 0 && errno != EINPROGRESS && errno != EAGAIN && errno != EWOULDBLOCK) {
-            log_socket_error(tag, sock, errno, "Error occurred during sending");
-            return -1;
-        }
-        to_write -= written;
+int socket_send(const char* tag, const int sock, const uint8_t* data,
+                const size_t len) {
+  int to_write = len;
+  while (to_write > 0) {
+    int written = send(sock, data + (len - to_write), to_write, 0);
+    if (written < 0 && errno != EINPROGRESS && errno != EAGAIN &&
+        errno != EWOULDBLOCK) {
+      log_socket_error(tag, sock, errno, "Error occurred during sending");
+      return -1;
     }
-    return len;
+    to_write -= written;
+  }
+  return len;
 }

@@ -1,6 +1,7 @@
-#include "driver/i2c_master.h"
-#include "i2c_bus.h"
 #include "ads1015.h"
+#include "driver/i2c_master.h"
+#include "freertos/idf_additions.h"
+#include "i2c_bus.h"
 #include "unity_fixture.h"
 
 static i2c_bus_t bus_handle;
@@ -39,9 +40,8 @@ TEST(ADS1015, ADS1015_Initialization) {
 }
 
 TEST(ADS1015, ADS1015_Wrong_Address) {
-
   ads1015_config_t config = {
-      .i2c_addr = 0x00, // Invalid address
+      .i2c_addr = 0x00,  // Invalid address
       .i2c_speed_hz = 400000,
       .bus_handle = bus_handle.handle,
   };

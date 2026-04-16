@@ -1,13 +1,13 @@
 menu "Talos ESP Driver Configuration"
     config DRIVER_MOTORHAT_SDA_PIN
         int "MotorHAT SDA Pin"
-        default 16
+        default 21
         help
             GPIO pin number for MotorHAT SDA line.
 
     config DRIVER_MOTORHAT_SCL_PIN
         int "MotorHAT SCL Pin"
-        default 17
+        default 22
         help
             GPIO pin number for MotorHAT SCL line.
 
@@ -23,33 +23,21 @@ menu "Talos ESP Driver Configuration"
         help
             I2C address for the MotorHAT device.
 
-    config DRIVER_ADS1015_SDA_PIN
-        int "ADS1015 SDA Pin"
-        default 18
+    config DRIVER_MOTORHAT_PAN_SPEED
+        string "MotorHAT Pan Speed"
+        default "0.8"
         help
-            GPIO pin number for the ADS1015 SDA line.
-
-    config DRIVER_ADS1015_SCL_PIN
-        int "ADS1015 SCL Pin"
-        default 19
-        help
-            GPIO pin number for the ADS1015 SCL line.
-
-    config DRIVER_ADS1015_I2C_BUS
-        int "ADS1015 I2C Bus Number"
-        default 1
-        help
-            I2C bus number for ADS1015 communication.
+            The fraction of PCA9685's max PWM speed to use when driving polar pan.
 
     config DRIVER_ADS1015_ADDRESS
         hex "ADS1015 I2C Address"
-        default 0x48
+        default 0x4a
         help
             I2C address for the ADS1015 device.
 
     config DRIVER_ADS1015_RDY_PIN
         int "ADS1015 RDY Pin"
-        default 21
+        default 18
         help
             GPIO pin number for the ADS1015 RDY line.
 
@@ -61,6 +49,12 @@ menu "Talos ESP Driver Configuration"
             Data rate of ADS1015 in samples per second.
             0=128SPS, 1=250SPS, 2=490SPS, 3=920SPS,
             4=1600SPS, 5=2400SPS, 6=3300SPS
+
+    config DRIVER_LIMIT_SWITCH_PIN
+        int "Limit Switch Pin"
+        default 23
+        help
+            GPIO pin for limit switch alerts.
 
     config DRIVER_WIFI_SSID
         string "WiFi SSID"
@@ -85,11 +79,5 @@ menu "Talos ESP Driver Configuration"
         default "8080"
         help
             Listening port for the server.
-
-    config DRIVER_LIMIT_SWITCH_PIN
-        int "Limit Switch Pin"
-        default 22
-        help
-            GPIO pin for limit switch alerts.
 
 endmenu

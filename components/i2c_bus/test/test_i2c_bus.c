@@ -16,8 +16,9 @@ TEST_TEAR_DOWN(I2C_Bus) {
 }
 
 TEST(I2C_Bus, I2C_Bus_Initialization) {
-  i2c_bus_config_t config = {
-      .port = I2C_NUM_0, .sda_io_num = CONFIG_I2CBUS_TEST_SDA_PIN, .scl_io_num = CONFIG_I2CBUS_TEST_SCL_PIN};
+  i2c_bus_config_t config = {.port = I2C_NUM_0,
+                             .sda_io_num = CONFIG_I2CBUS_TEST_SDA_PIN,
+                             .scl_io_num = CONFIG_I2CBUS_TEST_SCL_PIN};
 
   esp_err_t err = i2c_bus_init(&bus_handle, &config);
   TEST_ASSERT_EQUAL(ESP_OK, err);
