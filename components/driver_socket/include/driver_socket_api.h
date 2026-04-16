@@ -53,6 +53,7 @@ typedef struct {
   int8_t delta_altitude; /** Requested change in altitude */
 } __attribute__((packed)) driver_socket_api_polar_pan_start_payload_t;
 
+/** Callback struct that allows the driver socket api to access motorhat motion commands */
 typedef struct {
   esp_err_t (*polar_pan)(int16_t delta_azimuth, int16_t delta_altitude,
                          uint16_t delay_ms, uint16_t time_ms);

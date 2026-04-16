@@ -144,6 +144,8 @@ void app_main(void) {
   ESP_ERROR_CHECK(
       driver_socket_init(&socket_handle, &socket_config, &motor_interface));
 
+
+  // Track encoder values
   int axis1_count;
   int axis2_count;
 

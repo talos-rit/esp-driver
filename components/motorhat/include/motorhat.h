@@ -148,7 +148,7 @@ esp_err_t motorhat_polar_pan(int16_t delta_azimuth, int16_t delta_altitude,
  * @brief Polar pan start command
  *
  * Starts a continuous pan movement that will run until a stop command is
- * received.
+ * received. Only uses two axes currently, directly relating azimuth to axis 1 and altitude to axis 2.
  *
  * @param[in] delta_azimuth Azimuth delta for the pan movement
  * @param[in] delta_altitude Altitude delta for the pan movement
@@ -175,7 +175,20 @@ esp_err_t motorhat_polar_pan_stop(void);
 /**
  * @brief Home command
  *
- * Moves the motors to a predefined home position after an optional delay.
+ * Moves the motors to a predefined home position after an optional delay. Blocks high level movement commands
+ * such as polar pan, setting the motor speed and direction directly to operate around these commands.
+ * 
+ * The homing sequence is modeled after the sequence demonstrated by the SCORBOT ER-V, since both robots
+ * have the unusual placement of their limit switches at the centers of their corresponding axis's range,
+ * rather than at the edges. The one difference is that this homing sequence starts with moving each motor FORWARD,
+ * and ends with it moving BACKWARD to release the limit switch. This is because for the vertical axis, the slowed
+ * down motion to release the limit switch and reach the final homed position currently stalls the motor when moving upward,
+ * so I've reversed the order so that it happens while moving downward. This should be fixed by replacing the 
+ * current motor drivers with ones capable of pushing the proper amount of amps to drive the motors,
+ * but in the meantime reversing the order of FORWARD and BACKWArd motion in homing avoids this issue.
+ * 
+ * IMPORTANT: until current sensing is fully functional, the robot can't detect reaching the edge of it's range and will
+ * break if you attempt to home it while the arm is on the wrong side of the limit switch.
  *
  * @param[in] delay_ms Delay before starting the homing movement
  *

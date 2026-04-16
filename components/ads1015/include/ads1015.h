@@ -124,7 +124,7 @@ typedef struct {
   uint32_t i2c_speed_hz;              /**< I2C bus speed in Hz */
   i2c_master_bus_handle_t bus_handle; /**< I2C master bus handle */
   gpio_num_t rdy_gpio;                /**< GPIO number for ALERT pin */
-  uint8_t adc_data_rate; /**< Data rate setting for ADC conversions */
+  uint8_t adc_data_rate;              /**< Data rate setting for ADC conversions */
 } ads1015_config_t;
 
 /**
@@ -151,17 +151,6 @@ typedef struct {
  *    - ESP_ERR_*: Other ESP-IDF error codes from I2C operations
  */
 esp_err_t ads1015_init(ads1015_handle_t* handle, const ads1015_config_t* config);
-
-/**
- * @brief Check the ADC value against the configured threshholds and trigger
- * E-stop if it exceeds them
- *
- * @param[in] value ADC value to check
- *
- * @return
- *    - ESP_OK: Success
- */
-esp_err_t ads1015_check_current(int16_t value, bool mux_state);
 
 /**
  * @brief Read one or more registers from the ADS1015

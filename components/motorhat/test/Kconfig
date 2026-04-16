@@ -12,4 +12,10 @@ menu "PCA9685 Configuration"
         hex "Test I2C address"
         default 0x60
 
+    config DRIVER_LIMIT_SWITCH_PIN
+        int "Limit Switch Pin"
+        default 23
+        help
+            GPIO pin for limit switch alerts.
+
 endmenu
