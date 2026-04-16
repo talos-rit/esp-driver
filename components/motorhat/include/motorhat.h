@@ -5,6 +5,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "driver/gpio.h"
 #include "pca9685.h"
 
 #define DEFAULT_FREQUENCY_HZ 1526.0f
@@ -73,6 +74,7 @@ typedef struct {
   uint16_t polar_pan_speed; /**< Speed to use for polar pan movements */
   motorhat_encoder_cb_t encoder_cb; /**< Clear encoder count function callback */
   void* encoder_ctx; /** < Clear encoder count callback context (the encoder handle) */
+  gpio_num_t limit_gpio; /**< GPIO number for limit switch pin */
 } motorhat_config_t;
 
 /**
@@ -83,6 +85,7 @@ typedef struct {
   uint16_t polar_pan_speed; /**< Speed to use for polar pan movements */
   motorhat_encoder_cb_t encoder_cb; /**< Clear encoder count function callback */
   void* encoder_ctx; /** < Clear encoder count callback context (the encoder handle) */
+  gpio_num_t limit_gpio; /**< GPIO number for limit switch pin */
 } motorhat_handle_t;
 
 /**

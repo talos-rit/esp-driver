@@ -122,6 +122,7 @@ void app_main(void) {
           PCA9685_PWM_MAX * atof(CONFIG_DRIVER_MOTORHAT_PAN_SPEED),
       .encoder_cb = (motorhat_encoder_cb_t)clear_all_encoders,
       .encoder_ctx = &encoder_array,
+      .limit_gpio = CONFIG_DRIVER_LIMIT_SWITCH_PIN,
   };
   ESP_ERROR_CHECK(motorhat_init(&motorhat, &motorhat_config));
 

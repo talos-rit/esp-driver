@@ -44,6 +44,7 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
   handle->polar_pan_speed = config->polar_pan_speed;
   handle->encoder_cb = config->encoder_cb;
   handle->encoder_ctx = config->encoder_ctx;
+  handle->limit_gpio = config->limit_gpio;
 
   xTaskCreate(motor_stop_task, "motor_stop_task", 4096, handle, 8, NULL);
 
@@ -121,7 +122,7 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
         motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed / 3);
 
         // Detect limit switch release by polling
-        while (!gpio_get_level(CONFIG_DRIVER_LIMIT_SWITCH_PIN)) {
+        while (!gpio_get_level(s_handle->limit_gpio)) {
             vTaskDelay(pdMS_TO_TICKS(10));
         }
         ESP_LOGI(TAG, "Motor %d finished homing", m);
@@ -146,7 +147,7 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
       motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed / 3);
 
       // Detect limit switch release by polling
-      while (!gpio_get_level(CONFIG_DRIVER_LIMIT_SWITCH_PIN)) {
+      while (!gpio_get_level(s_handle->limit_gpio)) {
           vTaskDelay(pdMS_TO_TICKS(10));
       }
       ESP_LOGI(TAG, "Motor %d finished homing", m);
