@@ -1,3 +1,7 @@
+#include <math.h>
+#include <inttypes.h>
+#include <stdlib.h>
+
 #include "ads1015.h"
 #include "driver/gpio.h"
 #include "driver_socket.h"
@@ -38,6 +42,71 @@ void clear_all_encoders(void* ctx) {
         encoder_clear_count(&arr->encoders[i]);
     }
 }
+
+static const int axis_encoder_index[MOTORHAT_NUM_AXES] = {
+    [MOTORHAT_AXIS_AZIMUTH] = 0,
+    [MOTORHAT_AXIS_ALTITUDE] = 1,
+};
+
+static esp_err_t read_axis_count(void* ctx, motorhat_axis_t axis, int* count) {
+    encoder_array_t* arr = (encoder_array_t*)ctx;
+    if (arr == NULL || count == NULL || axis < MOTORHAT_AXIS_AZIMUTH || axis >= MOTORHAT_NUM_AXES) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    int index = axis_encoder_index[axis];
+    if (index >= arr->count) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    return encoder_get_raw_count(&arr->encoders[index], count);
+}
+
+// Each encoder slot produces 4 counts due to x4 quadrature decoding (see encoder_get_raw_count in encoder.h)
+#define ENCODER_COUNTS_PER_SLOT 4
+
+typedef struct {
+    const char* name;
+    int encoder_slots;
+    const char* gearbox_ratio;
+    int pinion_teeth;
+    int driven_teeth;
+    int range_pos_deg;
+    int range_neg_deg;
+} soft_limit_axis_params_t;
+
+static esp_err_t compute_soft_limit(const soft_limit_axis_params_t* params, int percent, motorhat_soft_limit_t* limit) {
+    if (params->encoder_slots <= 0 || params->pinion_teeth <= 0 || params->driven_teeth<= 0) {
+        ESP_LOGE(TAG, "Soft limits %s: slots and teeth must be positive", params->name);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char* end = NULL;
+    double gearbox = strtod(params->gearbox_ratio, &end);
+    if (end == params->gearbox_ratio || *end != '\0' || !(gearbox > 0.0)) {
+        ESP_LOGE(TAG, "Soft limits %s: invalid gearbox ratio \"%s\"", params->name, params->gearbox_ratio);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    double counts_per_deg = (double)params->encoder_slots * ENCODER_COUNTS_PER_SLOT * gearbox * params->driven_teeth / params->pinion_teeth / 360.0;
+    double fraction = percent / 100.0;
+
+    // round each magnitude down so rounding can only shrink the bounds
+    double pos = floor(params->range_pos_deg * fraction * counts_per_deg);
+    double neg = floor(params->range_neg_deg * fraction * counts_per_deg);
+
+    if (!(pos <= INT32_MAX) || !(neg <= INT32_MAX)) {
+        ESP_LOGE(TAG, "soft limits %s: bounds overflow", params->name);
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    limit->max_count = (int32_t)pos;
+    limit->min_count = -(int32_t)neg;
+
+    ESP_LOGI(TAG, "Soft limits %s: %.2f counts/deg, allowed counts %" PRId32 " to %" PRId32, params->name, counts_per_deg, limit->min_count, limit->max_count);
+    return ESP_OK;
+}
+
 
 void app_main(void) {
   // Initialize NVS
@@ -123,7 +192,44 @@ void app_main(void) {
       .encoder_cb = (motorhat_encoder_cb_t)clear_all_encoders,
       .encoder_ctx = &encoder_array,
       .limit_gpio = CONFIG_DRIVER_LIMIT_SWITCH_PIN,
+
+      .axis_count_cb = read_axis_count,
+      .axis_count_ctx = &encoder_array,
   };
+
+  #ifdef CONFIG_DRIVER_SOFT_LIMITS_ENABLE
+    const soft_limit_axis_params_t soft_limit_params[MOTORHAT_NUM_AXES] = {
+        [MOTORHAT_AXIS_AZIMUTH] =
+            {
+                .name = "azimuth",
+                .encoder_slots = CONFIG_DRIVER_SOFT_LIMITS_AZIMUTH_ENCODER_SLOTS,
+                .gearbox_ratio = CONFIG_DRIVER_SOFT_LIMITS_AZIMUTH_GEARBOX_RATIO,
+                .pinion_teeth = CONFIG_DRIVER_SOFT_LIMITS_AZIMUTH_PINION_TEETH,
+                .driven_teeth = CONFIG_DRIVER_SOFT_LIMITS_AZIMUTH_DRIVEN_TEETH,
+                .range_pos_deg = CONFIG_DRIVER_SOFT_LIMITS_AZIMUTH_RANGE_POS_DEG,
+                .range_neg_deg = CONFIG_DRIVER_SOFT_LIMITS_AZIMUTH_RANGE_NEG_DEG,
+            },
+        [MOTORHAT_AXIS_ALTITUDE] =
+            {
+                .name = "altitude",
+                .encoder_slots = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_ENCODER_SLOTS,
+                .gearbox_ratio = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_GEARBOX_RATIO,
+                .pinion_teeth = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_PINION_TEETH,
+                .driven_teeth = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_DRIVEN_TEETH,
+                .range_pos_deg = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_RANGE_POS_DEG,
+                .range_neg_deg = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_RANGE_NEG_DEG,
+            },
+    };
+
+    for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+        ESP_ERROR_CHECK(compute_soft_limit(&soft_limit_params[axis], CONFIG_DRIVER_SOFT_LIMITS_PERCENT, &motorhat_config.soft_limits[axis]));
+    }
+    motorhat_config.soft_limits_enabled = true;
+
+  #else
+    ESP_LOGW(TAG, "Soft limits disabled, motors are not bounded");
+  #endif
+
   ESP_ERROR_CHECK(motorhat_init(&motorhat, &motorhat_config));
 
   // Initialize Wi-Fi and socket connection

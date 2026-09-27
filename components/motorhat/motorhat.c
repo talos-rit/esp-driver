@@ -40,11 +40,39 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
     return ESP_ERR_INVALID_ARG;
   }
 
+  if (config->soft_limits_enabled) {
+    if (config->axis_count_cb == NULL) {
+      ESP_LOGE(TAG, "Soft limits enabled but no axis count callback given");
+      return ESP_ERR_INVALID_ARG;
+    }
+
+    for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+      int count = 0;
+      esp_err_t err = config->axis_count_cb(config->axis_count_ctx, axis, &count);
+      if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Axis %d count read failed: %s", axis, esp_err_to_name(err));
+        return err;
+      }
+
+      if (config->soft_limits[axis].min_count > 0 || config->soft_limits[axis].max_count < 0) {
+        ESP_LOGE(TAG, "Axis %d soft limits do not contain the boot position", axis);
+        return ESP_ERR_INVALID_ARG;
+      }
+    }
+  }
+
   s_handle = handle;
   handle->polar_pan_speed = config->polar_pan_speed;
   handle->encoder_cb = config->encoder_cb;
   handle->encoder_ctx = config->encoder_ctx;
   handle->limit_gpio = config->limit_gpio;
+
+  handle->soft_limits_enabled = config->soft_limits_enabled;
+  handle->axis_count_cb = config->axis_count_cb;
+  handle->axis_count_ctx = config->axis_count_ctx;
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+    handle->soft_limits[axis] = config->soft_limits[axis];
+  }
 
   xTaskCreate(motor_stop_task, "motor_stop_task", 4096, handle, 8, NULL);
 
@@ -57,6 +85,13 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
   if (xEventGroupGetBits(g_motor_events) & HOMING_FLAG) {
     ESP_LOGW(TAG, "Homing in progress, cannot send commands");
     return ESP_ERR_INVALID_STATE;
+  }
+
+  // Homing drives each axis until a current or limit switch event, which the soft limits would interrupt
+  // and it re-zeroes the encoders the soft limits are measured from so we need to disable homing
+  if (s_handle->soft_limits_enabled) {
+    ESP_LOGW(TAG, "Soft limits enabled, home command rejected");
+    return ESP_ERR_NOT_SUPPORTED;
   }
   
   if (s_handle == NULL) return ESP_ERR_INVALID_STATE;

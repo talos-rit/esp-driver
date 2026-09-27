@@ -81,3 +81,75 @@ menu "Talos ESP Driver Configuration"
             Listening port for the server.
 
 endmenu
+
+menu "Soft Limits"
+    config DRIVER_SOFT_LIMITS_ENABLE
+        bool "Enable encoder soft limits"
+        default y
+        help
+            Stops an axis once its encoder count passes a bound computed from
+            the values below. Boot position is treated as home (count 0).
+            While enabled, the home command is rejected.
+
+    config DRIVER_SOFT_LIMITS_PERCENT
+        int "Percent of physical travel allowed on each side of home"
+        range 1 100
+        default 50
+
+    config DRIVER_SOFT_LIMITS_POLL_MS
+        int "Soft limit check interval (ms)"
+        range 1 100
+        default 10
+
+    menu "Azimuth axis"
+        config DRIVER_SOFT_LIMITS_AZIMUTH_ENCODER_SLOTS
+            int "Encoder wheel slots"
+            range 1 1000
+            default 20
+        config DRIVER_SOFT_LIMITS_AZIMUTH_GEARBOX_RATIO
+            string "Motor gearbox ratio (X:1)"
+            default "127.1"
+        config DRIVER_SOFT_LIMITS_AZIMUTH_PINION_TEETH
+            int "Transmission pinion (motor side) teeth"
+            range 1 1000
+            default 24
+        config DRIVER_SOFT_LIMITS_AZIMUTH_DRIVEN_TEETH
+            int "Transmission driven (joint side) teeth"
+            range 1 1000
+            default 120
+        config DRIVER_SOFT_LIMITS_AZIMUTH_RANGE_POS_DEG
+            int "Physical travel from home, positive-count direction (deg)"
+            range 0 360
+            default 133
+        config DRIVER_SOFT_LIMITS_AZIMUTH_RANGE_NEG_DEG
+            int "Physical travel from home, negative-count direction (deg)"
+            range 0 360
+            default 133
+    endmenu
+
+    menu "Altitude axis"
+        config DRIVER_SOFT_LIMITS_ALTITUDE_ENCODER_SLOTS
+            int "Encoder wheel slots"
+            range 1 1000
+            default 20
+        config DRIVER_SOFT_LIMITS_ALTITUDE_GEARBOX_RATIO
+            string "Motor gearbox ratio (X:1)"
+            default "127.1"
+        config DRIVER_SOFT_LIMITS_ALTITUDE_PINION_TEETH
+            int "Transmission pinion (motor side) teeth"
+            range 1 1000
+            default 20
+        config DRIVER_SOFT_LIMITS_ALTITUDE_DRIVEN_TEETH
+            int "Transmission driven (joint side) teeth"
+            range 1 1000
+            default 72
+        config DRIVER_SOFT_LIMITS_ALTITUDE_RANGE_POS_DEG
+            int "Physical travel from home, positive-count direction (deg)"
+            range 0 360
+            default 6
+        config DRIVER_SOFT_LIMITS_ALTITUDE_RANGE_NEG_DEG
+            int "Physical travel from home, negative-count direction (deg)"
+            range 0 360
+            default 6
+    endmenu
+endmenu

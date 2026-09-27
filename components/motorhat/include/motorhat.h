@@ -2,6 +2,7 @@
 #define _MOTORHAT_H_
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
@@ -37,6 +38,28 @@ static const motorhat_motor_t axis_motor[MOTORHAT_NUM_AXES] = {
     [MOTORHAT_AXIS_AZIMUTH] = MOTORHAT_MOTOR3,
     [MOTORHAT_AXIS_ALTITUDE] = MOTORHAT_MOTOR4,
 };
+
+/**
+ * @brief Soft limit bounds for one axis in raw encoder counts
+ * 
+ * Count 0 is the position the arm was in when the ESP32 booted (the manually homed position)
+ * An axis may not be driven past min_count or max_count
+ */
+typedef struct {
+  int32_t min_count; /**< Lowest allowed count, always <= 0 */
+  int32_t max_count; /**< Highest allowed count, always >= 0 */
+} motorhat_soft_limit_t;
+
+/**
+ * @brief Function callback for reading the encoder count of one axis
+ * 
+ * @param[in] ctx Callback context (axis_count_ctx)
+ * @param[in] axis Axis to read
+ * @param[out] count Raw encoder count of that axis
+ * 
+ * @return ESP_OK on success
+ */
+typedef esp_err_t (*motorhat_axis_count_cb_t)(void* ctx, motorhat_axis_t axis, int* count);
 
 /**
  * @brief Function callback for clearing encoder count
@@ -75,6 +98,11 @@ typedef struct {
   motorhat_encoder_cb_t encoder_cb; /**< Clear encoder count function callback */
   void* encoder_ctx; /** < Clear encoder count callback context (the encoder handle) */
   gpio_num_t limit_gpio; /**< GPIO number for limit switch pin */
+
+  bool soft_limits_enabled; /**< Enforce soft limits when true */
+  motorhat_soft_limit_t soft_limits[MOTORHAT_NUM_AXES]; /**< Per axis bounds indexed by motorhat_axis_t */
+  motorhat_axis_count_cb_t axis_count_cb; /**< Reads an axis's encoder count, required when soft_limits_enabled */
+  void* axis_count_ctx; /**< Context passed to axis_count_cb */
 } motorhat_config_t;
 
 /**
@@ -86,6 +114,11 @@ typedef struct {
   motorhat_encoder_cb_t encoder_cb; /**< Clear encoder count function callback */
   void* encoder_ctx; /** < Clear encoder count callback context (the encoder handle) */
   gpio_num_t limit_gpio; /**< GPIO number for limit switch pin */
+
+  bool soft_limits_enabled; /**< Enforce soft limits when true */
+  motorhat_soft_limit_t soft_limits[MOTORHAT_NUM_AXES]; /**< Per axis bounds indexed by motorhat_axis_t */
+  motorhat_axis_count_cb_t axis_count_cb; /**< Reads an axis's encoder count, required when soft_limits_enabled */
+  void* axis_count_ctx; /**< Context passed to axis_count_cb */
 } motorhat_handle_t;
 
 /**
