@@ -224,6 +224,8 @@ void app_main(void) {
     for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
         ESP_ERROR_CHECK(compute_soft_limit(&soft_limit_params[axis], CONFIG_DRIVER_SOFT_LIMITS_PERCENT, &motorhat_config.soft_limits[axis]));
     }
+    motorhat_config.forward_increases_count[MOTORHAT_AXIS_AZIMUTH] = CONFIG_DRIVER_SOFT_LIMITS_AZIMUTH_FWD_INCREASES;
+    motorhat_config.forward_increases_count[MOTORHAT_AXIS_ALTITUDE] = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_FWD_INCREASES;
     motorhat_config.soft_limits_enabled = true;
 
   #else

@@ -125,6 +125,14 @@ menu "Soft Limits"
             int "Physical travel from home, negative-count direction (deg)"
             range 0 360
             default 133
+        config DRIVER_SOFT_LIMITS_AZIMUTH_FWD_INCREASES
+            int "FORWARD increases encoder count (1) or decreases it (0)"
+            range 0 1
+            default 1
+            help
+                PLACEHOLDER until bench tested. Set to 1 if driving this
+                axis's motor FORWARD makes its encoder count go up, 0 if it
+                makes the count go down.
     endmenu
 
     menu "Altitude axis"
@@ -151,5 +159,13 @@ menu "Soft Limits"
             int "Physical travel from home, negative-count direction (deg)"
             range 0 360
             default 6
+        config DRIVER_SOFT_LIMITS_ALTITUDE_FWD_INCREASES
+            int "FORWARD increases encoder count (1) or decreases it (0)"
+            range 0 1
+            default 1
+            help
+                PLACEHOLDER until bench tested. Set to 1 if driving this
+                axis's motor FORWARD makes its encoder count go up, 0 if it
+                makes the count go down.
     endmenu
 endmenu

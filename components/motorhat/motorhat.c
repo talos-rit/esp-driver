@@ -5,9 +5,17 @@
 #include "signal_bus.h"
 #include "driver/gpio.h"
 
+#include <inttypes.h>
+
 #define TAG "motorhat"
 
 static motorhat_handle_t* s_handle = NULL;
+
+// Last direction commanded on each axis
+static motorhat_direction_t s_axis_direction[MOTORHAT_NUM_AXES];
+
+// Held while checking soft limits and writing axis motor state. Check and motor writes that follow can't be intertwined with another task
+static SemaphoreHandle_t s_axis_lock = NULL;
 
 static motorhat_direction_t delta_to_direction(int8_t delta) {
   if (delta > 0) return MOTORHAT_DIRECTION_FORWARD;
@@ -61,6 +69,16 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
     }
   }
 
+  s_axis_lock = xSemaphoreCreateMutex();
+  if (s_axis_lock == NULL) {
+    return ESP_ERR_NO_MEM;
+  }
+  
+  // FORWARD is 0 so the zero initialized array must be set explicitly 
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+    s_axis_direction[axis] = MOTORHAT_DIRECTION_RELEASE;
+  }
+
   s_handle = handle;
   handle->polar_pan_speed = config->polar_pan_speed;
   handle->encoder_cb = config->encoder_cb;
@@ -72,6 +90,7 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
   handle->axis_count_ctx = config->axis_count_ctx;
   for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
     handle->soft_limits[axis] = config->soft_limits[axis];
+    handle->forward_increases_count[axis] = config->forward_increases_count[axis];
   }
 
   xTaskCreate(motor_stop_task, "motor_stop_task", 4096, handle, 8, NULL);
@@ -228,6 +247,84 @@ esp_err_t motorhat_polar_pan(int16_t delta_azimuth, int16_t delta_altitude,
   return ESP_OK;
 }
 
+// Returns true if axis may be driven in this direction. 
+// BRAKE and RELEASE are always allowed. 
+// FORWARD and BACKWARD are refused if they would move the count further past the soft limit the axis has already reached.
+// Caller must hold s_axis_lock
+static bool soft_limit_allows(motorhat_axis_t axis, motorhat_direction_t direction) {
+  if (direction != MOTORHAT_DIRECTION_FORWARD && direction != MOTORHAT_DIRECTION_BACKWARD) {
+    return true;
+  }
+
+  int count = 0;
+  esp_err_t err = s_handle->axis_count_cb(s_handle->axis_count_ctx, axis, &count);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Axis %d count read failed (%s), refusing to move it", axis, esp_err_to_name(err));
+    return false;
+  }
+
+  // if direction is forward and going forward makes encoder count go up, true
+  // if direction is forward and going forward makes encoder go down, false
+  // if direction is backward and going forward makes count go up, false
+  // if direction is backward and going forward makes count go down, true
+  // works out whether this command pushes the count up or down
+  bool count_increases = (direction == MOTORHAT_DIRECTION_FORWARD) == s_handle->forward_increases_count[axis];
+  const motorhat_soft_limit_t* limit = &s_handle->soft_limits[axis];
+
+  if (count_increases && count >= limit->max_count) {
+    ESP_LOGW(TAG, "Axis %d at max soft limit (count %d, max %" PRId32 ")", axis, count, limit->max_count);
+    return false;
+  }
+
+  if (!count_increases && count <= limit->min_count) {
+    ESP_LOGW(TAG, "Axis %d at min soft limit (count %d, min %" PRId32 ")", axis, count, limit->min_count);
+    return false;
+  }
+
+  return true;
+}
+
+// Applies a polar pan start to botha axes. Axes that soft limits refuse are brakes and left at speed 0.
+// Caller must hold s_axis_lock.
+static esp_err_t start_axes(motorhat_direction_t directions[MOTORHAT_NUM_AXES]) {
+  bool blocked[MOTORHAT_NUM_AXES] = {false};
+  if (s_handle->soft_limits_enabled) {
+    for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+      if (!soft_limit_allows(axis, directions[axis])) {
+        directions[axis] = MOTORHAT_DIRECTION_BRAKE;
+        blocked[axis] = true;
+      }
+    }
+  }
+
+  // set both axes speed to 0 to prevent direction change while moving
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+    esp_err_t err =
+        motorhat_set_motor_speed(s_handle, axis_motor[axis], 0);
+    if (err != ESP_OK) {
+      return err;
+    }
+  }
+
+  // Set directions
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+    esp_err_t err = motorhat_set_motor_direction(s_handle, axis_motor[axis], directions[axis]);
+    if (err != ESP_OK) {
+      return err;
+    }
+  }
+
+  // Set speeds to a default value
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+    esp_err_t err = motorhat_set_motor_speed(s_handle, axis_motor[axis], s_handle->polar_pan_speed);
+    if (err != ESP_OK) {
+      return err;
+    }
+  }
+
+  return ESP_OK;
+}
+
 esp_err_t motorhat_polar_pan_start(int8_t delta_azimuth,
                                    int8_t delta_altitude) {
   if (xEventGroupGetBits(g_motor_events) & HOMING_FLAG) {
@@ -239,40 +336,56 @@ esp_err_t motorhat_polar_pan_start(int8_t delta_azimuth,
 
   ESP_LOGI(TAG, "Received polar pan start command: delta_azimuth=%d, delta_altitude=%d", delta_azimuth, delta_altitude);
 
-  // Set both axes speed to 0 to prevent direction change while moving
-  esp_err_t err =
-      motorhat_set_motor_speed(s_handle, axis_motor[MOTORHAT_AXIS_AZIMUTH], 0);
-  if (err != ESP_OK) {
-    return err;
-  }
-  err =
-      motorhat_set_motor_speed(s_handle, axis_motor[MOTORHAT_AXIS_ALTITUDE], 0);
-  if (err != ESP_OK) {
-    return err;
-  }
+  // NEW CODE BELOW
 
-  // Set directions based on deltas
-  err =
-      motorhat_set_motor_direction(s_handle, axis_motor[MOTORHAT_AXIS_AZIMUTH],
-                                   delta_to_direction(delta_azimuth));
-  if (err != ESP_OK) {
-    return err;
-  }
-  err =
-      motorhat_set_motor_direction(s_handle, axis_motor[MOTORHAT_AXIS_ALTITUDE],
-                                   delta_to_direction(delta_altitude));
-  if (err != ESP_OK) {
-    return err;
-  }
+  motorhat_direction_t directions[MOTORHAT_NUM_AXES] = {
+    [MOTORHAT_AXIS_AZIMUTH] = delta_to_direction(delta_azimuth),
+    [MOTORHAT_AXIS_ALTITUDE] = delta_to_direction(delta_altitude),
+  };
 
-  // Set speeds to a default value
-  err = motorhat_set_motor_speed(s_handle, axis_motor[MOTORHAT_AXIS_AZIMUTH],
-                                 s_handle->polar_pan_speed);
-  if (err != ESP_OK) {
-    return err;
-  }
-  return motorhat_set_motor_speed(s_handle, axis_motor[MOTORHAT_AXIS_ALTITUDE],
-                                  s_handle->polar_pan_speed);
+  xSemaphoreTake(s_axis_lock, portMAX_DELAY);
+  esp_err_t err = start_axes(directions);
+  xSemaphoreGive(s_axis_lock);
+
+  return err;
+
+  // END NEW CODE
+
+  // ***** COMMENTED OUT UNTIL start_axes IS TESTED. THEN WILL BE REMOVED *****
+  // // Set both axes speed to 0 to prevent direction change while moving
+  // esp_err_t err =
+  //     motorhat_set_motor_speed(s_handle, axis_motor[MOTORHAT_AXIS_AZIMUTH], 0);
+  // if (err != ESP_OK) {
+  //   return err;
+  // }
+  // err =
+  //     motorhat_set_motor_speed(s_handle, axis_motor[MOTORHAT_AXIS_ALTITUDE], 0);
+  // if (err != ESP_OK) {
+  //   return err;
+  // }
+
+  // // Set directions based on deltas
+  // err =
+  //     motorhat_set_motor_direction(s_handle, axis_motor[MOTORHAT_AXIS_AZIMUTH],
+  //                                  delta_to_direction(delta_azimuth));
+  // if (err != ESP_OK) {
+  //   return err;
+  // }
+  // err =
+  //     motorhat_set_motor_direction(s_handle, axis_motor[MOTORHAT_AXIS_ALTITUDE],
+  //                                  delta_to_direction(delta_altitude));
+  // if (err != ESP_OK) {
+  //   return err;
+  // }
+
+  // // Set speeds to a default value
+  // err = motorhat_set_motor_speed(s_handle, axis_motor[MOTORHAT_AXIS_AZIMUTH],
+  //                                s_handle->polar_pan_speed);
+  // if (err != ESP_OK) {
+  //   return err;
+  // }
+  // return motorhat_set_motor_speed(s_handle, axis_motor[MOTORHAT_AXIS_ALTITUDE],
+  //                                 s_handle->polar_pan_speed);
 }
 
 esp_err_t motorhat_polar_pan_stop(void) {
@@ -285,11 +398,27 @@ esp_err_t motorhat_polar_pan_stop(void) {
 
   ESP_LOGI(TAG, "Received polar pan stop command");
 
+  // NEW CODE BELOW
+
+  xSemaphoreTake(s_axis_lock, portMAX_DELAY);
   for (int m = MOTORHAT_MOTOR1; m < MOTORHAT_NUM_MOTORS; m++) {
     motorhat_set_motor_speed(s_handle, m, 0);
     motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BRAKE);
   }
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+    s_axis_direction[axis] = MOTORHAT_DIRECTION_BRAKE;
+  }
+  xSemaphoreGive(s_axis_lock);
   return ESP_OK;
+
+  // END NEW CODE
+
+  // ***** COMMENTED OUT UNTIL start_axes IS TESTED. THEN WILL BE REMOVED *****
+  // for (int m = MOTORHAT_MOTOR1; m < MOTORHAT_NUM_MOTORS; m++) {
+  //   motorhat_set_motor_speed(s_handle, m, 0);
+  //   motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BRAKE);
+  // }
+  // return ESP_OK;
 }
 
 // Motor control to be used by socket command functions

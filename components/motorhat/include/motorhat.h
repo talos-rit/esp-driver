@@ -103,6 +103,7 @@ typedef struct {
   motorhat_soft_limit_t soft_limits[MOTORHAT_NUM_AXES]; /**< Per axis bounds indexed by motorhat_axis_t */
   motorhat_axis_count_cb_t axis_count_cb; /**< Reads an axis's encoder count, required when soft_limits_enabled */
   void* axis_count_ctx; /**< Context passed to axis_count_cb */
+  bool forward_increases_count[MOTORHAT_NUM_AXES]; /**< Per axis, true if FORWARD makes the encoder count go up */
 } motorhat_config_t;
 
 /**
@@ -119,6 +120,7 @@ typedef struct {
   motorhat_soft_limit_t soft_limits[MOTORHAT_NUM_AXES]; /**< Per axis bounds indexed by motorhat_axis_t */
   motorhat_axis_count_cb_t axis_count_cb; /**< Reads an axis's encoder count, required when soft_limits_enabled */
   void* axis_count_ctx; /**< Context passed to axis_count_cb */
+  bool forward_increases_count[MOTORHAT_NUM_AXES]; /**< Per axis, true if FORWARD makes the encoder count go up */
 } motorhat_handle_t;
 
 /**
