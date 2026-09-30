@@ -226,6 +226,7 @@ void app_main(void) {
     }
     motorhat_config.forward_increases_count[MOTORHAT_AXIS_AZIMUTH] = CONFIG_DRIVER_SOFT_LIMITS_AZIMUTH_FWD_INCREASES;
     motorhat_config.forward_increases_count[MOTORHAT_AXIS_ALTITUDE] = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_FWD_INCREASES;
+    motorhat_config.soft_limit_poll_ms = CONFIG_DRIVER_SOFT_LIMITS_POLL_MS;
     motorhat_config.soft_limits_enabled = true;
 
   #else

@@ -104,6 +104,7 @@ typedef struct {
   motorhat_axis_count_cb_t axis_count_cb; /**< Reads an axis's encoder count, required when soft_limits_enabled */
   void* axis_count_ctx; /**< Context passed to axis_count_cb */
   bool forward_increases_count[MOTORHAT_NUM_AXES]; /**< Per axis, true if FORWARD makes the encoder count go up */
+  uint32_t soft_limit_poll_ms; /**< How often the soft limit monitor checks moving axes */
 } motorhat_config_t;
 
 /**
@@ -121,6 +122,7 @@ typedef struct {
   motorhat_axis_count_cb_t axis_count_cb; /**< Reads an axis's encoder count, required when soft_limits_enabled */
   void* axis_count_ctx; /**< Context passed to axis_count_cb */
   bool forward_increases_count[MOTORHAT_NUM_AXES]; /**< Per axis, true if FORWARD makes the encoder count go up */
+  uint32_t soft_limit_poll_ms; /**< How often the soft limit monitor checks moving axes */
 } motorhat_handle_t;
 
 /**

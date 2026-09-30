@@ -4,6 +4,7 @@
 #include "esp_log.h"
 #include "signal_bus.h"
 #include "driver/gpio.h"
+#include "freertos/semphr.h"
 
 #include <inttypes.h>
 
@@ -16,6 +17,9 @@ static motorhat_direction_t s_axis_direction[MOTORHAT_NUM_AXES];
 
 // Held while checking soft limits and writing axis motor state. Check and motor writes that follow can't be intertwined with another task
 static SemaphoreHandle_t s_axis_lock = NULL;
+
+// Defined below with the other soft limit functions, started by motorat_init
+static void soft_limit_monitor_task(void* args);
 
 static motorhat_direction_t delta_to_direction(int8_t delta) {
   if (delta > 0) return MOTORHAT_DIRECTION_FORWARD;
@@ -92,10 +96,22 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
     handle->soft_limits[axis] = config->soft_limits[axis];
     handle->forward_increases_count[axis] = config->forward_increases_count[axis];
   }
+  handle->soft_limit_poll_ms = config->soft_limit_poll_ms;
 
   xTaskCreate(motor_stop_task, "motor_stop_task", 4096, handle, 8, NULL);
 
-  return pca9685_init(&handle->pca9685, &config->pca9685_config);
+
+  esp_err_t err = pca9685_init(&handle->pca9685, &config->pca9685_config);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  if (handle->soft_limits_enabled) {
+    if (xTaskCreate(soft_limit_monitor_task, "soft_limit_task", 4096, NULL, 9, NULL) != pdPASS) {
+      return ESP_ERR_NO_MEM;
+    }
+  }
+
   return ESP_OK;
 }
 
@@ -284,6 +300,51 @@ static bool soft_limit_allows(motorhat_axis_t axis, motorhat_direction_t directi
   return true;
 }
 
+// Stops an axis that is being driven past its soft limit.
+// If stop fails, stop every motor instead so a failed write can never leave a motor running past its limits
+// Caller must hold s_axis_lock.
+static void stop_axis_at_limit(motorhat_axis_t axis) {
+  esp_err_t err = motorhat_set_motor_speed(s_handle, axis_motor[axis], 0);
+  if (err == ESP_OK) {
+    err = motorhat_set_motor_direction(s_handle, axis_motor[axis], MOTORHAT_DIRECTION_BRAKE);
+  }
+
+  if (err == ESP_OK) {
+    s_axis_direction[axis] = MOTORHAT_DIRECTION_BRAKE;
+    ESP_LOGW(TAG, "Axis %d stopped at soft limit", axis);
+    return;
+  }
+
+  ESP_LOGE(TAG, "Axis %d soft limit stop failed (%s), stopping all motors", axis, esp_err_to_name(err));
+  motorhat_emergency_stop(s_handle);
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+    s_axis_direction[axis] = MOTORHAT_DIRECTION_RELEASE;
+  }
+}
+
+// Every soft_limit_poll_ms, stops any axis being driven past soft limit. Uses same rule as polar pan start (soft_limit_allows),
+// so a moving axis stops where a new start command in that direction would be refused
+static void soft_limit_monitor_task(void* args) {
+  // At CONFIG_FREERTOS_HZ=100 a tick is 10ms so shorter periods round down to 0 ticks which vTaskDelayUntil does not allow
+  TickType_t period = pdMS_TO_TICKS(s_handle->soft_limit_poll_ms);
+  if (period == 0) {
+    period = 1;
+  }
+
+  TickType_t last_wake = xTaskGetTickCount();
+  while(1) {
+    vTaskDelayUntil(&last_wake, period);
+
+    xSemaphoreTake(s_axis_lock, portMAX_DELAY);
+    for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+      if (!soft_limit_allows(axis, s_axis_direction[axis])) {
+        stop_axis_at_limit(axis);
+      }
+    }
+    xSemaphoreGive(s_axis_lock);
+  }
+}
+
 // Applies a polar pan start to botha axes. Axes that soft limits refuse are brakes and left at speed 0.
 // Caller must hold s_axis_lock.
 static esp_err_t start_axes(motorhat_direction_t directions[MOTORHAT_NUM_AXES]) {
@@ -312,10 +373,14 @@ static esp_err_t start_axes(motorhat_direction_t directions[MOTORHAT_NUM_AXES]) 
     if (err != ESP_OK) {
       return err;
     }
+    s_axis_direction[axis] = directions[axis];
   }
 
   // Set speeds to a default value
   for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+    if (blocked[axis]) {
+      continue;
+    }
     esp_err_t err = motorhat_set_motor_speed(s_handle, axis_motor[axis], s_handle->polar_pan_speed);
     if (err != ESP_OK) {
       return err;
@@ -336,8 +401,6 @@ esp_err_t motorhat_polar_pan_start(int8_t delta_azimuth,
 
   ESP_LOGI(TAG, "Received polar pan start command: delta_azimuth=%d, delta_altitude=%d", delta_azimuth, delta_altitude);
 
-  // NEW CODE BELOW
-
   motorhat_direction_t directions[MOTORHAT_NUM_AXES] = {
     [MOTORHAT_AXIS_AZIMUTH] = delta_to_direction(delta_azimuth),
     [MOTORHAT_AXIS_ALTITUDE] = delta_to_direction(delta_altitude),
@@ -348,44 +411,6 @@ esp_err_t motorhat_polar_pan_start(int8_t delta_azimuth,
   xSemaphoreGive(s_axis_lock);
 
   return err;
-
-  // END NEW CODE
-
-  // ***** COMMENTED OUT UNTIL start_axes IS TESTED. THEN WILL BE REMOVED *****
-  // // Set both axes speed to 0 to prevent direction change while moving
-  // esp_err_t err =
-  //     motorhat_set_motor_speed(s_handle, axis_motor[MOTORHAT_AXIS_AZIMUTH], 0);
-  // if (err != ESP_OK) {
-  //   return err;
-  // }
-  // err =
-  //     motorhat_set_motor_speed(s_handle, axis_motor[MOTORHAT_AXIS_ALTITUDE], 0);
-  // if (err != ESP_OK) {
-  //   return err;
-  // }
-
-  // // Set directions based on deltas
-  // err =
-  //     motorhat_set_motor_direction(s_handle, axis_motor[MOTORHAT_AXIS_AZIMUTH],
-  //                                  delta_to_direction(delta_azimuth));
-  // if (err != ESP_OK) {
-  //   return err;
-  // }
-  // err =
-  //     motorhat_set_motor_direction(s_handle, axis_motor[MOTORHAT_AXIS_ALTITUDE],
-  //                                  delta_to_direction(delta_altitude));
-  // if (err != ESP_OK) {
-  //   return err;
-  // }
-
-  // // Set speeds to a default value
-  // err = motorhat_set_motor_speed(s_handle, axis_motor[MOTORHAT_AXIS_AZIMUTH],
-  //                                s_handle->polar_pan_speed);
-  // if (err != ESP_OK) {
-  //   return err;
-  // }
-  // return motorhat_set_motor_speed(s_handle, axis_motor[MOTORHAT_AXIS_ALTITUDE],
-  //                                 s_handle->polar_pan_speed);
 }
 
 esp_err_t motorhat_polar_pan_stop(void) {
@@ -398,8 +423,6 @@ esp_err_t motorhat_polar_pan_stop(void) {
 
   ESP_LOGI(TAG, "Received polar pan stop command");
 
-  // NEW CODE BELOW
-
   xSemaphoreTake(s_axis_lock, portMAX_DELAY);
   for (int m = MOTORHAT_MOTOR1; m < MOTORHAT_NUM_MOTORS; m++) {
     motorhat_set_motor_speed(s_handle, m, 0);
@@ -410,15 +433,6 @@ esp_err_t motorhat_polar_pan_stop(void) {
   }
   xSemaphoreGive(s_axis_lock);
   return ESP_OK;
-
-  // END NEW CODE
-
-  // ***** COMMENTED OUT UNTIL start_axes IS TESTED. THEN WILL BE REMOVED *****
-  // for (int m = MOTORHAT_MOTOR1; m < MOTORHAT_NUM_MOTORS; m++) {
-  //   motorhat_set_motor_speed(s_handle, m, 0);
-  //   motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BRAKE);
-  // }
-  // return ESP_OK;
 }
 
 // Motor control to be used by socket command functions
