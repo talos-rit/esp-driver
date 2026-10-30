@@ -162,17 +162,8 @@ void app_main(void) {
   ESP_ERROR_CHECK(encoder_init(&encoders[0], &encoder_axis1_config));
   ESP_ERROR_CHECK(encoder_start(&encoders[0]));
 
-  encoder_config_t encoder_axis2_config = {
-      .P0_pin = CONFIG_DRIVER_ALTITUDE_ENCODER_A_PIN,
-      .P1_pin = CONFIG_DRIVER_ALTITUDE_ENCODER_B_PIN,
-      .resolution = CONFIG_ENCODER_0_RESOLUTION,
-      .glitch_filter_ns = CONFIG_ENCODER_GLITCH_FILTER,
-      .invert_angle = CONFIG_ENCODER_0_ANGLE_INVERT,
-  };
-  ESP_ERROR_CHECK(encoder_init(&encoders[1], &encoder_axis2_config));
-  ESP_ERROR_CHECK(encoder_start(&encoders[1]));
-
-  int encoder_count = 2;
+  // One encoder per axis in use
+  int encoder_count = MOTORHAT_NUM_ACTIVE_AXES;
 #ifdef CONFIG_DRIVER_ALTITUDE_B_ENABLE
   encoder_config_t encoder_axis3_config = {
       .P0_pin = CONFIG_DRIVER_ALTITUDE_B_ENCODER_A_PIN,
@@ -273,7 +264,7 @@ void app_main(void) {
 
   };
 
-  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < encoder_count; axis++) {
     ESP_ERROR_CHECK(compute_soft_limit(&soft_limit_params[axis],
                                        CONFIG_DRIVER_SOFT_LIMITS_PERCENT,
                                        &motorhat_config.soft_limits[axis]));
@@ -327,19 +318,13 @@ void app_main(void) {
 
   // Track encoder values
   int axis1_count;
-  int axis2_count;
 
   while (1) {
     esp_err_t err = encoder_get_raw_count(&encoders[0], &axis1_count);
     if (err != ESP_OK) {
       ESP_LOGE(TAG, "Failed to get encoder count: %s", esp_err_to_name(err));
     }
-    err = encoder_get_raw_count(&encoders[1], &axis2_count);
-    if (err != ESP_OK) {
-      ESP_LOGE(TAG, "Failed to get encoder count: %s", esp_err_to_name(err));
-    }
-    ESP_LOGI(TAG, "Axis 1 count: %i       Axis 2 count: %i", axis1_count,
-             axis2_count);
+    ESP_LOGI(TAG, "Axis 1 count: %i", axis1_count);
 
     vTaskDelay(pdMS_TO_TICKS(500));  // Avoid busy loop
 

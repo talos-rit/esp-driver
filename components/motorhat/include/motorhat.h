@@ -32,6 +32,9 @@ typedef enum {
   MOTORHAT_NUM_AXES
 } motorhat_axis_t;
 
+/** Axes driven, counted from MOTORHAT_AXIS_AZIMUTH. One axis demo: azimuth only */
+#define MOTORHAT_NUM_ACTIVE_AXES 1
+
 /**
  * @brief Soft limit bounds for one axis in raw encoder counts
  *
