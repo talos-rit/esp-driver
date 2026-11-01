@@ -228,6 +228,12 @@ void app_main(void) {
 #endif
 #endif
 
+#ifdef CONFIG_DRIVER_HOMING_ENABLE
+  motorhat_config.homing_enabled = true;
+#else
+  ESP_LOGW(TAG, "Homing disabled, home command will be rejected");
+#endif
+
 #ifdef CONFIG_DRIVER_SOFT_LIMITS_ENABLE
   const soft_limit_axis_params_t soft_limit_params[MOTORHAT_NUM_AXES] = {
       [MOTORHAT_AXIS_AZIMUTH] =

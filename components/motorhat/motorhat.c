@@ -22,6 +22,8 @@ static TickType_t s_axis_started[MOTORHAT_NUM_AXES];
 // writes that follow can't be intertwined with another task
 static SemaphoreHandle_t s_axis_lock = NULL;
 
+static bool soft_limit_allows(motorhat_axis_t axis, motorhat_direction_t direction);
+
 // Defined below with the other soft limit functions, started by motorat_init
 static void soft_limit_monitor_task(void* args);
 
@@ -129,6 +131,7 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
   handle->limit_gpio = config->limit_gpio;
 
   handle->soft_limits_enabled = config->soft_limits_enabled;
+  handle->homing_enabled = config->homing_enabled;
   handle->axis_count_cb = config->axis_count_cb;
   handle->axis_count_ctx = config->axis_count_ctx;
   for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
@@ -162,6 +165,18 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
   return ESP_OK;
 }
 
+static EventBits_t home_wait(motorhat_axis_t axis, motorhat_direction_t direction) {
+  while (1) {
+    EventBits_t bits = xEventGroupWaitBits(g_motor_events, HOME_EVENT, pdTRUE, pdFALSE, pdMS_TO_TICKS(10));
+    if (bits & HOME_EVENT) {
+      return bits;
+    }
+    if (s_handle->soft_limits_enabled && !soft_limit_allows(axis, direction)) {
+      return 0;
+    }
+  }
+}
+
 // Socket commands
 esp_err_t motorhat_home(uint16_t delay_ms) {
   if (xEventGroupGetBits(g_motor_events) & HOMING_FLAG) {
@@ -169,15 +184,12 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
     return ESP_ERR_INVALID_STATE;
   }
 
-  // Homing drives each axis until a current or limit switch event, which the
-  // soft limits would interrupt and it re-zeroes the encoders the soft limits
-  // are measured from so we need to disable homing
-  if (s_handle->soft_limits_enabled) {
-    ESP_LOGW(TAG, "Soft limits enabled, home command rejected");
+  if (s_handle == NULL) return ESP_ERR_INVALID_STATE;
+
+  if (!s_handle->homing_enabled) {
+    ESP_LOGW(TAG, "Homing disabled in menuconfig, home command rejected");
     return ESP_ERR_NOT_SUPPORTED;
   }
-
-  if (s_handle == NULL) return ESP_ERR_INVALID_STATE;
 
   ESP_LOGI(TAG, "Received home command: delay_ms=%d", delay_ms);
 
@@ -202,13 +214,12 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
     motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_FORWARD);
     motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed);
 
-    EventBits_t bits = xEventGroupWaitBits(g_motor_events, HOME_EVENT, pdTRUE,
-                                           pdFALSE, portMAX_DELAY);
+    EventBits_t bits = home_wait(axis, MOTORHAT_DIRECTION_FORWARD);
 
     // Stop when a homing event is detected
     motorhat_set_motor_speed(s_handle, m, 0);
 
-    if (bits & CURRENT_ANY) {
+    if (bits == 0 || (bits & CURRENT_ANY)) {
       ESP_LOGI(TAG, "Motor %d hit the forward end of its range", m);
 
       // Small pause before going opposite direction
@@ -218,8 +229,7 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
       motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BACKWARD);
       motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed);
 
-      bits = xEventGroupWaitBits(g_motor_events, HOME_EVENT, pdTRUE, pdFALSE,
-                                 portMAX_DELAY);
+      bits = home_wait(axis, MOTORHAT_DIRECTION_BACKWARD);
 
       // Stop when a homing event is detected
       motorhat_set_motor_speed(s_handle, m, 0);
@@ -243,6 +253,8 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
       } else {
         ESP_LOGW(TAG, "Motor %d unexpected homing event detected", m);
         motorhat_emergency_stop(s_handle);
+        xEventGroupClearBits(g_motor_events, HOMING_FLAG);
+        return ESP_FAIL;
       }
 
     } else if (bits & LIMIT_ANY) {
