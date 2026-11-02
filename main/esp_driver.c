@@ -16,6 +16,7 @@
 #include "motorhat.h"
 #include "nvs_flash.h"
 #include "pca9685.h"
+#include "pi_link.h"
 #include "signal_bus.h"
 
 #define TAG "MAIN"
@@ -24,12 +25,15 @@
 #define ENCODER_STANDARD_RESOLUTION 20
 #define POLAR_PAN_SPEED
 
+#ifdef CONFIG_DRIVER_LINK_WIFI
+// Only the Wi-Fi socket uses this; -Werror rejects it unused in Pi mode
 static const driver_socket_api_motor_interface_t motor_interface = {
     .polar_pan = motorhat_polar_pan,
     .polar_pan_start = motorhat_polar_pan_start,
     .polar_pan_stop = motorhat_polar_pan_stop,
     .home = motorhat_home,
 };
+#endif
 
 typedef struct {
   encoder_handle_t* encoders;
@@ -303,6 +307,26 @@ void app_main(void) {
   };
   ESP_ERROR_CHECK(ads1015_init(&ads, &ads_config));
 
+#ifdef CONFIG_DRIVER_LINK_PI_SERIAL
+#if CONFIG_ESP_CONSOLE_UART_NUM == 0
+#error "Pi serial link owns UART0: set console output to None or UART1"
+#endif
+  // Take commands from the Pi's operator over USB serial
+  pi_link_config_t pi_link_config = {
+      .baud_rate = CONFIG_DRIVER_PI_SERIAL_BAUD,
+      .debug_reply = false,
+      .motor =
+          {
+              .polar_pan_start = motorhat_polar_pan_start,
+              .polar_pan_stop = motorhat_polar_pan_stop,
+              .home = motorhat_home,
+          },
+  };
+#ifdef CONFIG_DRIVER_PI_SERIAL_DEBUG_REPLY
+  pi_link_config.debug_reply = true;
+#endif
+  ESP_ERROR_CHECK(pi_link_init(&pi_link_config));
+#else
   // Initialize Wi-Fi and socket connection
   driver_wifi_config_t wifi_config = {
       .ssid = CONFIG_DRIVER_WIFI_SSID,
@@ -321,6 +345,7 @@ void app_main(void) {
 
   ESP_ERROR_CHECK(
       driver_socket_init(&socket_handle, &socket_config, &motor_interface));
+#endif
 
   // Track encoder values
   int axis1_count;

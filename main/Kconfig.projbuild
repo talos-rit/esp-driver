@@ -81,6 +81,38 @@ menu "Talos ESP Driver Configuration"
         help
             Listening port for the server.
 
+    choice DRIVER_LINK
+        prompt "Command link"
+        default DRIVER_LINK_WIFI
+        help
+            Where motion commands come from.
+
+        config DRIVER_LINK_WIFI
+            bool "Commander ICD over Wi-Fi"
+        config DRIVER_LINK_PI_SERIAL
+            bool "Pi operator (erv) ACL over USB serial"
+            help
+                The ESP32 stands in for the ER-V controller. The link uses
+                UART0 (the USB port), so console output must be set to None
+                or moved to UART1.
+    endchoice
+
+    config DRIVER_PI_SERIAL_BAUD
+        int "Pi serial baud rate"
+        depends on DRIVER_LINK_PI_SERIAL
+        default 9600
+        help
+            Must match the Pi's tty. erv never sets the baud; 9600 is the
+            ER-V controller's rate and the Linux usb-serial default.
+
+    config DRIVER_PI_SERIAL_DEBUG_REPLY
+        bool "Reply with what was parsed (bench only)"
+        depends on DRIVER_LINK_PI_SERIAL
+        default n
+        help
+            For testing from a laptop terminal. Leave off with the Pi
+            attached: if the Pi's tty echoes, replies come back as commands.
+
     config DRIVER_MAX_RUN_MS
         int "Longest a pan may run without a new start command (ms)"
         range 0 60000
