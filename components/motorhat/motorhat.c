@@ -140,6 +140,7 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
         config->forward_increases_count[axis];
     handle->axis_motor[axis] = config->axis_motor[axis];
     handle->axis_speed[axis] = config->axis_speed[axis];
+    handle->axis_speed_max[axis] = config->axis_speed[axis];
   }
   handle->soft_limit_poll_ms = config->soft_limit_poll_ms;
   handle->max_run_ms = config->max_run_ms;
@@ -548,6 +549,26 @@ esp_err_t motorhat_polar_pan_stop(void) {
     s_axis_direction[axis] = MOTORHAT_DIRECTION_BRAKE;
   }
   xSemaphoreGive(s_axis_lock);
+  return ESP_OK;
+}
+
+esp_err_t motorhat_set_speed_percent(uint8_t percent) {
+  if (s_handle == NULL) return ESP_ERR_INVALID_STATE;
+  if (percent < 1 || percent > 100) return ESP_ERR_INVALID_ARG;
+
+  // start_axes reads axis_speed under this lock
+  xSemaphoreTake(s_axis_lock, portMAX_DELAY);
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+    // At most axis_speed_max, so the stall-safe duty is never exceeded. Both
+    // wrist motors share a configured speed, so they stay equal
+    s_handle->axis_speed[axis] =
+        (uint32_t)s_handle->axis_speed_max[axis] * percent / 100;
+  }
+  xSemaphoreGive(s_axis_lock);
+
+  ESP_LOGI(TAG, "Pan speed %d%%: azimuth %d, altitude %d", percent,
+           s_handle->axis_speed[MOTORHAT_AXIS_AZIMUTH],
+           s_handle->axis_speed[MOTORHAT_AXIS_ALTITUDE]);
   return ESP_OK;
 }
 

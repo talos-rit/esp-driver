@@ -2,7 +2,9 @@
 
 #include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "driver/uart.h"
 #include "esp_log.h"
@@ -22,6 +24,8 @@
 #define ACL_MANUAL_TOGGLE '~'
 #define ACL_XON 0x11   // The Pi's tty uses XON/XOFF flow control (ixon ixoff)
 #define ACL_XOFF 0x13
+#define ACL_CTRL_A 0x01  // Abort movement
+#define ACL_CTRL_C 0x03  // Cut off a listing, sent by the dev erv
 
 static pi_link_config_t s_config;
 static bool s_manual_mode = false;
@@ -149,18 +153,276 @@ static void start_homing(void) {
   }
 }
 
+// Sent after each command, see prompt() below
+static void prompt(void);
+
+// ---------------------------------------------------------------------------
+// Line commands
+//
+// Every ACL line the operator (erv) can send, plus the ESP native commands
+// from the Pi compatibility spec. Matching is case insensitive, like the ER-V
+// controller (erv sends both "HOME" and "clrbuf"). Each handler gets the text
+// after the command name, "" when there is none.
+//
+// Sent by the old erv (operator main, the Pi image's operator2 bb8dbe4):
+//   \r, ~, manual keys, HERE DELTA, SHIFT DELTA BY a n, clrbuf, MOVE DELTA,
+//   DEFP DELTA, HOME
+// Also sent by the dev erv (operator twinning 5a18ea6):
+//   CON, SPEED n, LISTPV POSITION, Ctrl-C, and it reads the '>' prompt
+// ---------------------------------------------------------------------------
+
+// Rejects anything after a command that takes no arguments, so a corrupted
+// line is not run as something else
+static bool no_args(const char* cmd, const char* args) {
+  if (*args == '\0') return true;
+  char text[32];
+  snprintf(text, sizeof(text), "%s bad argument\r\n", cmd);
+  reply(text);
+  return false;
+}
+
+// Parses a whole decimal integer. Trailing text fails, so "5x" is not 5
+static bool parse_long(const char* text, long* value) {
+  char* end;
+  *value = strtol(text, &end, 10);
+  return end != text && *end == '\0';
+}
+
+// HOME: home the arm. erv also sends it once at startup (DEFP, HOME, HERE).
+// TODO: the controller also takes HOME n to home one axis. Homing one axis is
+// not supported, so HOME n homes everything
+static void cmd_home(const char* args) {
+  (void)args;
+  start_homing();
+}
+
+// clrbuf: empty the movement buffer and halt all motors. erv sends it as its
+// stop and before every MOVE.
+// TODO: must also cancel homing (spec priority 1). motorhat_home has no cancel
+// or timeout, so homing currently runs to the end
+static void cmd_clrbuf(const char* args) {
+  (void)args;  // clrbuf axis would clear one axis; stopping all is safer
+  stop_motion();
+}
+
+// A: abort the current movement (Ctrl-A is handled in handle_byte). Not sent
+// by erv. The controller keeps its movement buffer; this board has none, so
+// this is the same as clrbuf.
+// TODO: cancel homing too, same as clrbuf
+static void cmd_abort(const char* args) {
+  (void)args;
+  stop_motion();
+}
+
+// STOP: ESP native stop, same as clrbuf.
+// TODO: cancel homing too, same as clrbuf
+static void cmd_stop(const char* args) {
+  (void)args;
+  stop_motion();
+}
+
+// SPEED n: n 1 to 100, a percent of the configured pan speed (sent by
+// Commander's speed control through the dev erv)
+static void cmd_speed(const char* args) {
+  long percent;
+  if (!parse_long(args, &percent) || percent < 1 || percent > 100) {
+    reply("speed bad argument\r\n");
+    return;
+  }
+
+  if (s_config.motor.set_speed_percent((uint8_t)percent) != ESP_OK) {
+    reply("speed failed\r\n");
+    return;
+  }
+
+  char text[24];
+  snprintf(text, sizeof(text), "speed %ld\r\n", percent);
+  reply(text);
+}
+
+// CON: enable servo control. The dev erv sends it for Commander's enable
+// operation (ICD hardware op 0x04) to recover from CONTROL DISABLED.
+// TODO: the motors have no enable state yet, so this does nothing. Once COFF
+// and fault latching exist (overcurrent, impact, limit), CON should clear the
+// latch and allow motion again
+static void cmd_con(const char* args) {
+  (void)args;  // CON axis would enable one axis; treated like CON
+  reply("con: nothing to enable\r\n");
+}
+
+// COFF: disable servo control. Not sent by erv. Stops the motors so it is at
+// least safe.
+// TODO: latch a disabled state that refuses manual keys, HOME and MOVE until
+// CON, and report CONTROL DISABLED like the controller does
+static void cmd_coff(const char* args) {
+  (void)args;
+  stop_motion();
+  reply("coff: stopped, not latched\r\n");
+}
+
+// DEFP pos: define a position variable. erv only uses DELTA (home sequence).
+// TODO: store a named position (DELTA alone is enough for erv) once positions
+// and relative moves exist
+static void cmd_defp(const char* args) {
+  (void)args;
+  reply("defp: not implemented\r\n");
+}
+
+// HERE pos: record the current position into pos. erv sends HERE DELTA before
+// every relative move and 500 ms after each stop.
+// TODO: copy each axis's current encoder count into DELTA, the base that SHIFT
+// adds to and MOVE drives to
+static void cmd_here(const char* args) {
+  (void)args;
+  reply("here: not implemented\r\n");
+}
+
+// SHIFT pos BY axis counts: add counts to one axis of pos. erv only sends
+// "SHIFT DELTA BY <axis> <counts>", axes 1 base, 2 shoulder, 3 elbow,
+// 4 wrist pitch.
+// TODO: add counts to that axis of DELTA. The counts are ER-V encoder counts
+// (base 42.5666/deg, shoulder 33.2121/deg, wrist 8.3555/deg in operator
+// acl_private.hpp), so convert to this board's counts per degree (see
+// compute_soft_limit in esp_driver.c), base -> azimuth and wrist pitch ->
+// altitude. Clamp to the soft limits and refuse shoulder and elbow
+static void cmd_shift(const char* args) {
+  char pos[16];
+  int axis;
+  long counts;
+  int used = 0;
+  if (sscanf(args, "%15s BY %d %ld %n", pos, &axis, &counts, &used) != 3 ||
+      args[used] != '\0') {
+    reply("shift bad argument\r\n");
+    return;
+  }
+
+  char text[64];
+  snprintf(text, sizeof(text), "shift %s axis %d by %ld: not implemented\r\n",
+           pos, axis, counts);
+  reply(text);
+}
+
+// MOVE pos [duration] / MOVED pos [duration]: drive to pos. erv sends
+// MOVE DELTA after its SHIFTs. MOVED also holds the next command until the
+// move ends, which only matters inside controller programs.
+// TODO: needs a position move in motorhat (motorhat_polar_pan is still a
+// TODO). Drive each axis toward DELTA under the soft limits and max run time,
+// with duration (hundredths of a second) setting the speed when given.
+// clrbuf, A and STOP must cancel it
+static void cmd_move(const char* args) {
+  (void)args;
+  reply("move: not implemented\r\n");
+}
+
+// LISTPV POSITION: list the arm's joint encoder counts. The dev erv polls it
+// for telemetry about once a second when idle. The controller replies
+//   Position POSITION
+//    1:<base> 2:<shoulder> 3:<elbow> 4:<wrist pitch> 5:<wrist roll>
+//   X:... Y:... Z:... P:... R:...
+// and erv only parses the joint line (" %*d:%ld" five times).
+// TODO: needs an encoder read in pi_link_motor_interface_t. Reply with
+// azimuth as axis 1 and altitude as axis 4 in ER-V counts, 0 for the others,
+// and skip the Cartesian line. Only POSITION needs supporting
+static void cmd_listpv(const char* args) {
+  (void)args;
+  reply("listpv: not implemented\r\n");
+}
+
+// VERSION: ESP native, firmware version.
+// TODO: reply "ESP VERSION <version>" from esp_app_get_description()
+static void cmd_version(const char* args) {
+  if (!no_args("VERSION", args)) return;
+  reply("version: not implemented\r\n");
+}
+
+// CAPS: ESP native, which commands and axes this board supports.
+// TODO: reply e.g. "ESP CAPS AXES=AZIMUTH,ALTITUDE HOME SPEED STOP" built from
+// the menuconfig settings (homing, soft limits, second altitude motor)
+static void cmd_caps(const char* args) {
+  if (!no_args("CAPS", args)) return;
+  reply("caps: not implemented\r\n");
+}
+
+// STATUS: ESP native, current state.
+// TODO: reply with manual mode, homing, homed, moving axes, speed percent and
+// any fault (estop, overcurrent, limit)
+static void cmd_status(const char* args) {
+  if (!no_args("STATUS", args)) return;
+  reply("status: not implemented\r\n");
+}
+
+// ENCODER: ESP native, raw encoder counts.
+// TODO: needs the same encoder read as LISTPV. Reply
+// "ESP ENCODER AZ=<count> ALT=<count>" in this board's counts
+static void cmd_encoder(const char* args) {
+  if (!no_args("ENCODER", args)) return;
+  reply("encoder: not implemented\r\n");
+}
+
+typedef struct {
+  const char* name;
+  void (*handler)(const char* args);
+} line_command_t;
+
+static const line_command_t s_line_commands[] = {
+    // Implemented
+    {"HOME", cmd_home},
+    {"clrbuf", cmd_clrbuf},
+    {"A", cmd_abort},
+    {"STOP", cmd_stop},
+    {"SPEED", cmd_speed},
+    // Stubs, see the TODO on each handler
+    {"CON", cmd_con},
+    {"COFF", cmd_coff},
+    {"DEFP", cmd_defp},
+    {"HERE", cmd_here},
+    {"SHIFT", cmd_shift},
+    {"MOVE", cmd_move},
+    {"MOVED", cmd_move},
+    {"LISTPV", cmd_listpv},
+    {"VERSION", cmd_version},
+    {"CAPS", cmd_caps},
+    {"STATUS", cmd_status},
+    {"ENCODER", cmd_encoder},
+};
+
 static void handle_line(const char* line) {
   char text[PI_LINK_LINE_MAX + 16];
   snprintf(text, sizeof(text), "line [%s]\r\n", line);
   reply(text);
 
-  // Exact matches only. HERE, DEFP, SHIFT and MOVE are ignored until relative moves exist (motorhat_polar_pan is a TODO)
-  if (strcmp(line, "HOME") == 0) {
-    start_homing();
-  } else if (strcmp(line, "clrbuf") == 0) {
-    stop_motion();
+  // "NAME args": the name ends at the first space
+  const char* space = strchr(line, ' ');
+  size_t name_len = space ? (size_t)(space - line) : strlen(line);
+  const char* args = space ? space + 1 : "";
+  while (*args == ' ') args++;
+
+  for (size_t i = 0; i < sizeof(s_line_commands) / sizeof(s_line_commands[0]);
+       i++) {
+    const line_command_t* cmd = &s_line_commands[i];
+    if (strlen(cmd->name) == name_len &&
+        strncasecmp(line, cmd->name, name_len) == 0) {
+      cmd->handler(args);
+      prompt();
+      return;
+    }
   }
+
+  // TODO: the controller replies "ACL - unrecognized request", which the dev
+  // erv reports as a FAULT; the ESP spec wants "ESP ERROR UNSUPPORTED <cmd>".
+  // Pick one once replies go out on the wire
+  reply("unknown command\r\n");
+  prompt();
 }
+
+// The controller prints a '>' prompt when it is ready for the next command.
+// The old erv ignores it, but the dev erv (5a18ea6) depends on it: '>' sets
+// its direct_mode, and without direct_mode it never sends '~' or manual keys
+// after a Ctrl-C, and never polls LISTPV.
+// TODO: write ">" here once the wire protocol is settled. The ESP spec says no
+// prompt and no output on UART0, and the Pi tty's echo setting is unverified,
+// so nothing is sent yet
+static void prompt(void) {}
 
 static void reset_line(void) {
   s_line_len = 0;
@@ -170,6 +432,24 @@ static void reset_line(void) {
 static void handle_byte(uint8_t byte) {
   // Flow control from the Pi, not part of any command
   if (byte == ACL_XON || byte == ACL_XOFF) return;
+
+  // Ctrl-C: the dev erv sends it to cut off a LISTPV listing before it starts
+  // a manual pan, then waits for the prompt. Nothing here prints listings, so
+  // drop any partial line and prompt. Motion is not affected, as on the
+  // controller
+  if (byte == ACL_CTRL_C) {
+    reset_line();
+    prompt();
+    return;
+  }
+
+  // Ctrl-A: abort movement at once, the same as the A command
+  if (byte == ACL_CTRL_A) {
+    reset_line();
+    stop_motion();
+    prompt();
+    return;
+  }
 
   if (byte == ACL_MANUAL_TOGGLE) {
     reset_line();  // erv only sends ~ between whole commands
@@ -227,7 +507,8 @@ static void pi_link_task(void* arg) {
 
 esp_err_t pi_link_init(const pi_link_config_t* config) {
   if (!config || !config->motor.polar_pan_start ||
-      !config->motor.polar_pan_stop || !config->motor.home) {
+      !config->motor.polar_pan_stop || !config->motor.home ||
+      !config->motor.set_speed_percent) {
     return ESP_ERR_INVALID_ARG;
   }
   s_config = *config;

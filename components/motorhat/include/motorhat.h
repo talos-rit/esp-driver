@@ -130,7 +130,8 @@ typedef struct {
   motorhat_motor_t axis_motor[MOTORHAT_NUM_AXES]; /**< Motor HAT port driving each axis, indexed by motorhat_axis_t */
   bool altitude_b_reversed; /**< Drive ALTITUDE_B opposite to ALTITUDE (pitch on a differential wrist) */
   int num_axes; /**< Axes in use, MOTORHAT_NUM_AXES with ALTITUDE_B enabled and one fewer without */
-  uint16_t axis_speed[MOTORHAT_NUM_AXES]; /**< Polar pan PWM duty (0 to PCA9685_PWM_MAX) for each axis */
+  uint16_t axis_speed[MOTORHAT_NUM_AXES]; /**< Polar pan PWM duty (0 to PCA9685_PWM_MAX) for each axis, scaled by motorhat_set_speed_percent */
+  uint16_t axis_speed_max[MOTORHAT_NUM_AXES]; /**< Configured axis_speed, the duty used at 100 percent. Never exceeded */
 } motorhat_handle_t;
 
 /**
@@ -219,6 +220,23 @@ esp_err_t motorhat_polar_pan_start(int8_t delta_azimuth, int8_t delta_altitude);
  * functions
  */
 esp_err_t motorhat_polar_pan_stop(void);
+
+/**
+ * @brief Set the polar pan speed as a percent of each axis's configured speed
+ *
+ * 100 is the configured axis speed, so this can only slow the axes down, never
+ * push them past the stall-safe duty set in menuconfig. Takes effect on the
+ * next polar_pan_start. Homing speed is not affected. Allowed while homing so
+ * a speed sent next to HOME is not lost.
+ *
+ * @param[in] percent 1 to 100
+ *
+ * @return
+ *    - ESP_OK: Success
+ *    - ESP_ERR_INVALID_ARG: percent outside 1 to 100
+ *    - ESP_ERR_INVALID_STATE: motorhat_init has not run
+ */
+esp_err_t motorhat_set_speed_percent(uint8_t percent);
 
 /**
  * @brief Home command

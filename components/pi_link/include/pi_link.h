@@ -13,6 +13,7 @@ typedef struct {
   esp_err_t (*polar_pan_start)(int8_t delta_azimuth, int8_t delta_altitude);
   esp_err_t (*polar_pan_stop)(void);
   esp_err_t (*home)(uint16_t delay_ms);
+  esp_err_t (*set_speed_percent)(uint8_t percent); /**< SPEED n, 1 to 100 */
 } pi_link_motor_interface_t;
 
 /**
