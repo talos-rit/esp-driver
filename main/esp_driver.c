@@ -108,7 +108,29 @@ static esp_err_t compute_soft_limit(const soft_limit_axis_params_t* params, int 
 }
 
 
+// Checks in main/wiring_check.c, run instead of the normal firmware:
+// 0 = normal firmware
+// 1 = bench check, ESP32 on USB only (no robot, no motor supply)
+// 2 = robot check, robot connected and motor supply on
+// 3 = encoder watch, robot connected, motors never driven: move axes by hand
+// 4 = shunt check: find the ADS1015s, resting readings, keys 1-4 pulse a HAT port
+#define WIRING_CHECK 4
+void wiring_check(void);
+void robot_check(void);
+void encoder_watch(void);
+void shunt_check(void);
+
 void app_main(void) {
+#if WIRING_CHECK == 1
+  wiring_check();  // never returns
+#elif WIRING_CHECK == 2
+  robot_check();  // never returns
+#elif WIRING_CHECK == 3
+  encoder_watch();  // never returns
+#elif WIRING_CHECK == 4
+  shunt_check();  // never returns
+#endif
+
   // Initialize NVS
   esp_err_t ret = nvs_flash_init();
   if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
