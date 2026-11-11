@@ -191,11 +191,26 @@ void app_main(void) {
   motorhat_config_t motorhat_config = {
       .pca9685_config =
           {
-              .i2c_addr = CONFIG_DRIVER_MOTORHAT_ADDRESS,
-              .i2c_speed_hz = 400000,
-              .pwm_freq_hz = DEFAULT_FREQUENCY_HZ,
-              .bus_handle = bus.handle,
+              {
+                  .i2c_addr = CONFIG_DRIVER_MOTORHAT_ADDRESS,
+                  .i2c_speed_hz = 400000,
+                  .pwm_freq_hz = DEFAULT_FREQUENCY_HZ,
+                  .bus_handle = bus.handle,
+              },
+#ifdef CONFIG_DRIVER_MOTORHAT2_ENABLE
+              {
+                  .i2c_addr = CONFIG_DRIVER_MOTORHAT2_ADDRESS,
+                  .i2c_speed_hz = 400000,
+                  .pwm_freq_hz = DEFAULT_FREQUENCY_HZ,
+                  .bus_handle = bus.handle,
+              },
+#endif
           },
+#ifdef CONFIG_DRIVER_MOTORHAT2_ENABLE
+      .num_hats = 2,
+#else
+      .num_hats = 1,
+#endif
       .polar_pan_speed =
           PCA9685_PWM_MAX * atof(CONFIG_DRIVER_MOTORHAT_PAN_SPEED),
       .encoder_cb = (motorhat_encoder_cb_t)clear_all_encoders,

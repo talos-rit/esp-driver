@@ -21,7 +21,26 @@ menu "Talos ESP Driver Configuration"
         hex "MotorHAT I2C Address"
         default 0x60
         help
-            I2C address for the MotorHAT device.
+            I2C address for the first MotorHAT (motor ports 1-4).
+
+    config DRIVER_MOTORHAT2_ENABLE
+        bool "Second MotorHAT (motor ports 5-8)"
+        default n
+        help
+            A second HAT on the same I2C bus. Its M1-M4 become motor ports
+            5-8 in the Axes menu. Boot fails if it does not answer at
+            DRIVER_MOTORHAT2_ADDRESS. Every stop (emergency, pan stop,
+            homing) covers both HATs.
+
+    config DRIVER_MOTORHAT2_ADDRESS
+        hex "Second MotorHAT I2C Address"
+        depends on DRIVER_MOTORHAT2_ENABLE
+        range 0x60 0x7F
+        default 0x61
+        help
+            Set by the A0-A4 solder jumpers on the second HAT: 0x61 is A0
+            bridged. Must differ from the first HAT. Do not use 0x70, every
+            PCA9685 answers that address at power on.
 
     config DRIVER_MOTORHAT_PAN_SPEED
         string "MotorHAT homing speed"
@@ -145,7 +164,8 @@ endmenu
 
 menu "Axes"
     config DRIVER_AZIMUTH_MOTOR
-        int "Motor HAT port driving azimuth (base), 1-4 = M1-M4"
+        int "Motor HAT port driving azimuth (base), 1-4 = HAT 1 M1-M4, 5-8 = HAT 2"
+        range 1 8 if DRIVER_MOTORHAT2_ENABLE
         range 1 4
         default 3
 
@@ -160,7 +180,8 @@ menu "Axes"
         default 39
 
     config DRIVER_ALTITUDE_MOTOR
-        int "Motor HAT port driving altitude, 1-4 = M1-M4"
+        int "Motor HAT port driving altitude, 1-4 = HAT 1 M1-M4, 5-8 = HAT 2"
+        range 1 8 if DRIVER_MOTORHAT2_ENABLE
         range 1 4
         default 4
 
@@ -199,8 +220,9 @@ menu "Axes"
             wrist motors, and if either one stops the other stops too.
 
     config DRIVER_ALTITUDE_B_MOTOR
-        int "Motor HAT port driving the second altitude motor, 1-4 = M1-M4"
+        int "Motor HAT port driving the second altitude motor, 1-4 = HAT 1 M1-M4, 5-8 = HAT 2"
         depends on DRIVER_ALTITUDE_B_ENABLE
+        range 1 8 if DRIVER_MOTORHAT2_ENABLE
         range 1 4
         default 2
 

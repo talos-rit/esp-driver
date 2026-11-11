@@ -27,6 +27,16 @@ static bool soft_limit_allows(motorhat_axis_t axis, motorhat_direction_t directi
 // Defined below with the other soft limit functions, started by motorat_init
 static void soft_limit_monitor_task(void* args);
 
+// Motor N lives on HAT N / 4, port N % 4
+static pca9685_handle_t* motor_chip(motorhat_handle_t* handle,
+                                    motorhat_motor_t motor) {
+  return &handle->pca9685[motor / MOTORHAT_MOTORS_PER_HAT];
+}
+
+static const motorhat_motor_channels_t* motor_port(motorhat_motor_t motor) {
+  return &motor_channels[motor % MOTORHAT_MOTORS_PER_HAT];
+}
+
 static motorhat_direction_t delta_to_direction(int8_t delta) {
   if (delta > 0) return MOTORHAT_DIRECTION_FORWARD;
   if (delta < 0) return MOTORHAT_DIRECTION_BACKWARD;
@@ -67,11 +77,29 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
     return ESP_ERR_INVALID_ARG;
   }
 
+  if (config->num_hats < 1 || config->num_hats > MOTORHAT_MAX_HATS) {
+    ESP_LOGE(TAG, "num_hats %d, must be 1 to %d", config->num_hats,
+             MOTORHAT_MAX_HATS);
+    return ESP_ERR_INVALID_ARG;
+  }
+  // Two HATs at one address would both act on every write
+  for (int hat = 1; hat < config->num_hats; hat++) {
+    for (int other = 0; other < hat; other++) {
+      if (config->pca9685_config[hat].i2c_addr ==
+          config->pca9685_config[other].i2c_addr) {
+        ESP_LOGE(TAG, "HATs %d and %d both at address 0x%02X", other + 1,
+                 hat + 1, config->pca9685_config[hat].i2c_addr);
+        return ESP_ERR_INVALID_ARG;
+      }
+    }
+  }
+  int num_motors = config->num_hats * MOTORHAT_MOTORS_PER_HAT;
+
   int num_axes = MOTORHAT_NUM_ACTIVE_AXES;
   // Each axis needs its own valid port, or two axes would fight over one motor
   for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < num_axes; axis++) {
     motorhat_motor_t motor = config->axis_motor[axis];
-    if (motor < MOTORHAT_MOTOR1 || motor >= MOTORHAT_NUM_MOTORS) {
+    if (motor < MOTORHAT_MOTOR1 || motor >= num_motors) {
       ESP_LOGE(TAG, "Axis %d mapped to invalid motor %d", axis, motor + 1);
       return ESP_ERR_INVALID_ARG;
     }
@@ -145,13 +173,26 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
   handle->max_run_ms = config->max_run_ms;
   handle->altitude_b_reversed = config->altitude_b_reversed;
   handle->num_axes = num_axes;
+  handle->num_hats = config->num_hats;
+  handle->num_motors = num_motors;
 
-  esp_err_t err = pca9685_init(&handle->pca9685, &config->pca9685_config);
-  if (err != ESP_OK) {
-    return err;
+  // Each init forces that HAT's outputs off first, so a motor left running
+  // through an ESP32 reset stops on every HAT
+  for (int hat = 0; hat < config->num_hats; hat++) {
+    esp_err_t err =
+        pca9685_init(&handle->pca9685[hat], &config->pca9685_config[hat]);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "HAT %d at 0x%02X init failed: %s", hat + 1,
+               config->pca9685_config[hat].i2c_addr, esp_err_to_name(err));
+      return err;
+    }
+    ESP_LOGI(TAG, "HAT %d at 0x%02X ready, motors M%d-M%d", hat + 1,
+             config->pca9685_config[hat].i2c_addr,
+             hat * MOTORHAT_MOTORS_PER_HAT + 1,
+             (hat + 1) * MOTORHAT_MOTORS_PER_HAT);
   }
 
-  // Started after the PCA9685 is ready; it may emergency stop at once.
+  // Started after every PCA9685 is ready; it may emergency stop at once.
   xTaskCreate(motor_stop_task, "motor_stop_task", 4096, handle, 8, NULL);
 
   // Watches moving axes for soft limits and the max run time
@@ -200,7 +241,7 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
   vTaskDelay(pdMS_TO_TICKS(delay_ms));
 
   // Stop any movement before homing
-  for (int m = MOTORHAT_MOTOR1; m < MOTORHAT_NUM_MOTORS; m++) {
+  for (int m = MOTORHAT_MOTOR1; m < s_handle->num_motors; m++) {
     motorhat_set_motor_speed(s_handle, m, 0);
     motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_RELEASE);
   }
@@ -540,7 +581,7 @@ esp_err_t motorhat_polar_pan_stop(void) {
   ESP_LOGI(TAG, "Received polar pan stop command");
 
   xSemaphoreTake(s_axis_lock, portMAX_DELAY);
-  for (int m = MOTORHAT_MOTOR1; m < MOTORHAT_NUM_MOTORS; m++) {
+  for (int m = MOTORHAT_MOTOR1; m < s_handle->num_motors; m++) {
     motorhat_set_motor_speed(s_handle, m, 0);
     motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BRAKE);
   }
@@ -555,7 +596,7 @@ esp_err_t motorhat_polar_pan_stop(void) {
 esp_err_t motorhat_set_motor_speed(motorhat_handle_t* handle,
                                    motorhat_motor_t motor, uint16_t speed) {
   if (handle == NULL || motor < MOTORHAT_MOTOR1 ||
-      motor >= MOTORHAT_NUM_MOTORS) {
+      motor >= handle->num_motors) {
     return ESP_ERR_INVALID_ARG;
   }
 
@@ -568,16 +609,17 @@ esp_err_t motorhat_set_motor_speed(motorhat_handle_t* handle,
     return ESP_ERR_INVALID_ARG;
   }
 
-  const motorhat_motor_channels_t* channels = &motor_channels[motor];
+  const motorhat_motor_channels_t* channels = motor_port(motor);
+  pca9685_handle_t* chip = motor_chip(handle, motor);
 
-  return pca9685_set_duty_cycle(&handle->pca9685, channels->pwm_channel, speed);
+  return pca9685_set_duty_cycle(chip, channels->pwm_channel, speed);
 }
 
 esp_err_t motorhat_set_motor_direction(motorhat_handle_t* handle,
                                        motorhat_motor_t motor,
                                        motorhat_direction_t direction) {
   if (handle == NULL || motor < MOTORHAT_MOTOR1 ||
-      motor >= MOTORHAT_NUM_MOTORS) {
+      motor >= handle->num_motors) {
     return ESP_ERR_INVALID_ARG;
   }
 
@@ -586,41 +628,42 @@ esp_err_t motorhat_set_motor_direction(motorhat_handle_t* handle,
     return ESP_ERR_INVALID_STATE;
   }
 
-  const motorhat_motor_channels_t* channels = &motor_channels[motor];
+  const motorhat_motor_channels_t* channels = motor_port(motor);
+  pca9685_handle_t* chip = motor_chip(handle, motor);
 
   esp_err_t err;
 
   switch (direction) {
     case MOTORHAT_DIRECTION_FORWARD:
       err =
-          pca9685_digital_write(&handle->pca9685, channels->in1_channel, true);
+          pca9685_digital_write(chip, channels->in1_channel, true);
       if (err != ESP_OK) return err;
       err =
-          pca9685_digital_write(&handle->pca9685, channels->in2_channel, false);
+          pca9685_digital_write(chip, channels->in2_channel, false);
       err = ESP_OK;
       break;
     case MOTORHAT_DIRECTION_BACKWARD:
       err =
-          pca9685_digital_write(&handle->pca9685, channels->in1_channel, false);
+          pca9685_digital_write(chip, channels->in1_channel, false);
       if (err != ESP_OK) return err;
       err =
-          pca9685_digital_write(&handle->pca9685, channels->in2_channel, true);
+          pca9685_digital_write(chip, channels->in2_channel, true);
       err = ESP_OK;
       break;
     case MOTORHAT_DIRECTION_BRAKE:
       err =
-          pca9685_digital_write(&handle->pca9685, channels->in1_channel, true);
+          pca9685_digital_write(chip, channels->in1_channel, true);
       if (err != ESP_OK) return err;
       err =
-          pca9685_digital_write(&handle->pca9685, channels->in2_channel, true);
+          pca9685_digital_write(chip, channels->in2_channel, true);
       err = ESP_OK;
       break;
     case MOTORHAT_DIRECTION_RELEASE:
       err =
-          pca9685_digital_write(&handle->pca9685, channels->in1_channel, false);
+          pca9685_digital_write(chip, channels->in1_channel, false);
       if (err != ESP_OK) return err;
       err =
-          pca9685_digital_write(&handle->pca9685, channels->in2_channel, false);
+          pca9685_digital_write(chip, channels->in2_channel, false);
       err = ESP_OK;
       break;
     default:
@@ -636,19 +679,21 @@ esp_err_t motorhat_emergency_stop(motorhat_handle_t* handle) {
     return ESP_ERR_INVALID_ARG;
   }
 
+  // Every port on every HAT. A write that fails on one HAT does not stop the
+  // loop, so the other HAT still gets stopped
   esp_err_t first_err = ESP_OK;
-  for (int m = MOTORHAT_MOTOR1; m < MOTORHAT_NUM_MOTORS; m++) {
-    const motorhat_motor_channels_t* ch = &motor_channels[m];
+  for (int m = MOTORHAT_MOTOR1; m < handle->num_motors; m++) {
+    const motorhat_motor_channels_t* ch = motor_port(m);
+    pca9685_handle_t* chip = motor_chip(handle, m);
 
     // Stop PWM cycle and release both control lines
-    esp_err_t err =
-        pca9685_set_duty_cycle(&handle->pca9685, ch->pwm_channel, 0);
+    esp_err_t err = pca9685_set_duty_cycle(chip, ch->pwm_channel, 0);
     if (err != ESP_OK && first_err == ESP_OK) first_err = err;
 
-    err = pca9685_digital_write(&handle->pca9685, ch->in1_channel, false);
+    err = pca9685_digital_write(chip, ch->in1_channel, false);
     if (err != ESP_OK && first_err == ESP_OK) first_err = err;
 
-    err = pca9685_digital_write(&handle->pca9685, ch->in2_channel, false);
+    err = pca9685_digital_write(chip, ch->in2_channel, false);
     if (err != ESP_OK && first_err == ESP_OK) first_err = err;
   }
   return first_err;
