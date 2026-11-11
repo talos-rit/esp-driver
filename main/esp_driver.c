@@ -123,7 +123,17 @@ static esp_err_t compute_soft_limit(const soft_limit_axis_params_t* params,
   return ESP_OK;
 }
 
+// 1 = run main/axis_check.c instead of the normal firmware: robot connected,
+// both HATs, motor supply on. Pulses each of the 6 axes briefly and reports
+// encoder movement. Set back to 0 for the normal firmware.
+#define AXIS_CHECK 0
+void axis_check(void);
+
 void app_main(void) {
+#if AXIS_CHECK
+  axis_check();  // never returns
+#endif
+
   // Initialize NVS
   esp_err_t ret = nvs_flash_init();
   if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
