@@ -30,6 +30,16 @@ menu "Talos ESP Driver Configuration"
             The fraction of PCA9685's max PWM speed used by homing. Polar pan
             uses the per-axis speeds in the Axes menu.
 
+    config DRIVER_CURRENT_SENSING_ENABLE
+        bool "Enable ADS1015 overcurrent stop"
+        default n
+        help
+            When on, the firmware starts the ADS1015 at DRIVER_ADS1015_ADDRESS
+            and stops all motors if a shunt reading passes the threshold.
+            Boot fails if no ADS1015 answers at that address.
+            When off, the ADS1015 is never touched; motion is bounded only by
+            soft limits and the max run time.
+
     config DRIVER_ADS1015_ADDRESS
         hex "ADS1015 I2C Address"
         default 0x4a
