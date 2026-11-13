@@ -24,6 +24,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "i2c_bus.h"
+#include "motor_config.h"
 #include "motorhat.h"
 #include "pca9685.h"
 #include "signal_bus.h"
@@ -57,16 +58,14 @@ typedef struct {
   gpio_num_t p1_gpio;
 } axis_t;
 
-// Motors: axes 1-4 on HAT 1 M1-M4, axis 5 on HAT 2 M3, gripper on HAT 2 M4.
-// Encoders (P0/P1): A1 36/39, A2 34/35, A3 32/33, A4 25/26, A5 27/14, gripper 13/4.
+// Location and encoder pins come from menuconfig's Motors menu (defaults:
+// axes 1-4 on HAT 1 M1-M4, axis 5 on HAT 2 M3, gripper on HAT 2 M4).
 // Each encoder uses one PCNT unit; the classic ESP32 has 8.
 static const axis_t axes[] = {
-    {"Axis 1", MOTORHAT_MOTOR1, GPIO_NUM_36, GPIO_NUM_39},
-    {"Axis 2", MOTORHAT_MOTOR2, GPIO_NUM_34, GPIO_NUM_35},
-    {"Axis 3", MOTORHAT_MOTOR3, GPIO_NUM_32, GPIO_NUM_33},
-    {"Axis 4", MOTORHAT_MOTOR4, GPIO_NUM_25, GPIO_NUM_26},
-    {"Axis 5", MOTORHAT_MOTOR7, GPIO_NUM_27, GPIO_NUM_14},
-    {"Gripper", MOTORHAT_MOTOR8, GPIO_NUM_13, GPIO_NUM_4},
+#define AXIS_ENTRY(ID, SYM, NAME)                                   \
+  {NAME, MOTOR_CONFIG_PORT_INDEX(SYM), CONFIG_DRIVER_MOTOR_##SYM##_ENCODER_A_PIN, \
+   CONFIG_DRIVER_MOTOR_##SYM##_ENCODER_B_PIN},
+    MOTOR_CONFIG_LIST(AXIS_ENTRY)
 };
 #define NUM_AXES (sizeof(axes) / sizeof(axes[0]))
 

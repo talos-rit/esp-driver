@@ -25,10 +25,10 @@ menu "Talos ESP Driver Configuration"
 
     config DRIVER_MOTORHAT2_ENABLE
         bool "Second MotorHAT (motor ports 5-8)"
-        default n
+        default y
         help
-            A second HAT on the same I2C bus. Its M1-M4 become motor ports
-            5-8 in the Axes menu. Boot fails if it does not answer at
+            A second HAT on the same I2C bus. Motors in the Motors menu can
+            then be placed on HAT 2. Boot fails if it does not answer at
             DRIVER_MOTORHAT2_ADDRESS. Every stop (emergency, pan stop,
             homing) covers both HATs.
 
@@ -53,23 +53,377 @@ menu "Talos ESP Driver Configuration"
         bool "Enable ADS1015 overcurrent stop"
         default n
         help
-            When on, the firmware starts the ADS1015 at DRIVER_ADS1015_ADDRESS
-            and stops all motors if a shunt reading passes the threshold.
-            Boot fails if no ADS1015 answers at that address.
-            When off, the ADS1015 is never touched; motion is bounded only by
+            When on, every enabled ADC below is started and all motors stop
+            if any shunt reading passes the threshold (ADS1015 Configuration
+            menu). Boot fails if an enabled ADC does not answer.
+            When off, the ADCs are never touched; motion is bounded only by
             soft limits and the max run time.
+            The pair-to-motor defaults below follow the planned wiring and
+            have not been checked on the robot yet.
 
-    config DRIVER_ADS1015_ADDRESS
-        hex "ADS1015 I2C Address"
-        default 0x4a
+    config DRIVER_ADC1_ENABLE
+        bool "ADC 1 (ADS1015)"
+        depends on DRIVER_CURRENT_SENSING_ENABLE
+        default y
         help
-            I2C address for the ADS1015 device.
+            On shunt board 1. Defaults: A0-A1 = Axis 1, A2-A3 = Axis 2.
 
-    config DRIVER_ADS1015_RDY_PIN
-        int "ADS1015 RDY Pin"
+    config DRIVER_ADC1_ADDRESS
+        hex "ADC 1 I2C address"
+        depends on DRIVER_ADC1_ENABLE
+        range 0x48 0x4B
+        default 0x48
+        help
+            Set by the ADS1015 ADDR pin: GND = 0x48, VDD = 0x49, SDA = 0x4A,
+            SCL = 0x4B. Every ADC needs a different one.
+
+    config DRIVER_ADC1_RDY_PIN
+        int "ADC 1 RDY (ALERT) GPIO"
+        depends on DRIVER_ADC1_ENABLE
+        range 0 39
         default 18
         help
-            GPIO pin number for the ADS1015 RDY line.
+            Every ADC needs its own RDY pin. Avoid GPIO 0, 2 and 12 (boot
+            strapping) and the I2C, encoder and limit switch pins.
+
+    choice DRIVER_ADC1_PAIR_A_MOTOR_SEL
+        prompt "ADC 1 A0-A1 measures"
+        depends on DRIVER_ADC1_ENABLE
+        default DRIVER_ADC1_PAIR_A_MOTOR_AXIS1
+        help
+            The motor whose shunt this pair reads. Any overcurrent stops every motor; this only names the motor and its overcurrent bit.
+        config DRIVER_ADC1_PAIR_A_MOTOR_NONE
+            bool "None"
+        config DRIVER_ADC1_PAIR_A_MOTOR_AXIS1
+            bool "Axis 1 (base)"
+        config DRIVER_ADC1_PAIR_A_MOTOR_AXIS2
+            bool "Axis 2 (shoulder)"
+        config DRIVER_ADC1_PAIR_A_MOTOR_AXIS3
+            bool "Axis 3 (elbow)"
+        config DRIVER_ADC1_PAIR_A_MOTOR_AXIS4
+            bool "Axis 4 (wrist motor 4)"
+        config DRIVER_ADC1_PAIR_A_MOTOR_AXIS5
+            bool "Axis 5 (wrist motor 5)"
+        config DRIVER_ADC1_PAIR_A_MOTOR_GRIPPER
+            bool "Gripper"
+    endchoice
+
+    config DRIVER_ADC1_PAIR_A_MOTOR_ID
+        int
+        depends on DRIVER_ADC1_ENABLE
+        default 0 if DRIVER_ADC1_PAIR_A_MOTOR_NONE
+        default 1 if DRIVER_ADC1_PAIR_A_MOTOR_AXIS1
+        default 2 if DRIVER_ADC1_PAIR_A_MOTOR_AXIS2
+        default 3 if DRIVER_ADC1_PAIR_A_MOTOR_AXIS3
+        default 4 if DRIVER_ADC1_PAIR_A_MOTOR_AXIS4
+        default 5 if DRIVER_ADC1_PAIR_A_MOTOR_AXIS5
+        default 6 if DRIVER_ADC1_PAIR_A_MOTOR_GRIPPER
+
+    choice DRIVER_ADC1_PAIR_B_MOTOR_SEL
+        prompt "ADC 1 A2-A3 measures"
+        depends on DRIVER_ADC1_ENABLE
+        default DRIVER_ADC1_PAIR_B_MOTOR_AXIS2
+        help
+            The motor whose shunt this pair reads. Any overcurrent stops every motor; this only names the motor and its overcurrent bit.
+        config DRIVER_ADC1_PAIR_B_MOTOR_NONE
+            bool "None"
+        config DRIVER_ADC1_PAIR_B_MOTOR_AXIS1
+            bool "Axis 1 (base)"
+        config DRIVER_ADC1_PAIR_B_MOTOR_AXIS2
+            bool "Axis 2 (shoulder)"
+        config DRIVER_ADC1_PAIR_B_MOTOR_AXIS3
+            bool "Axis 3 (elbow)"
+        config DRIVER_ADC1_PAIR_B_MOTOR_AXIS4
+            bool "Axis 4 (wrist motor 4)"
+        config DRIVER_ADC1_PAIR_B_MOTOR_AXIS5
+            bool "Axis 5 (wrist motor 5)"
+        config DRIVER_ADC1_PAIR_B_MOTOR_GRIPPER
+            bool "Gripper"
+    endchoice
+
+    config DRIVER_ADC1_PAIR_B_MOTOR_ID
+        int
+        depends on DRIVER_ADC1_ENABLE
+        default 0 if DRIVER_ADC1_PAIR_B_MOTOR_NONE
+        default 1 if DRIVER_ADC1_PAIR_B_MOTOR_AXIS1
+        default 2 if DRIVER_ADC1_PAIR_B_MOTOR_AXIS2
+        default 3 if DRIVER_ADC1_PAIR_B_MOTOR_AXIS3
+        default 4 if DRIVER_ADC1_PAIR_B_MOTOR_AXIS4
+        default 5 if DRIVER_ADC1_PAIR_B_MOTOR_AXIS5
+        default 6 if DRIVER_ADC1_PAIR_B_MOTOR_GRIPPER
+
+    config DRIVER_ADC2_ENABLE
+        bool "ADC 2 (ADS1015)"
+        depends on DRIVER_CURRENT_SENSING_ENABLE
+        default y
+        help
+            On shunt board 1. Defaults: A0-A1 = Axis 3, A2-A3 = Axis 4.
+
+    config DRIVER_ADC2_ADDRESS
+        hex "ADC 2 I2C address"
+        depends on DRIVER_ADC2_ENABLE
+        range 0x48 0x4B
+        default 0x49
+        help
+            Set by the ADS1015 ADDR pin: GND = 0x48, VDD = 0x49, SDA = 0x4A,
+            SCL = 0x4B. Every ADC needs a different one.
+
+    config DRIVER_ADC2_RDY_PIN
+        int "ADC 2 RDY (ALERT) GPIO"
+        depends on DRIVER_ADC2_ENABLE
+        range 0 39
+        default 19
+        help
+            Every ADC needs its own RDY pin. Avoid GPIO 0, 2 and 12 (boot
+            strapping) and the I2C, encoder and limit switch pins.
+
+    choice DRIVER_ADC2_PAIR_A_MOTOR_SEL
+        prompt "ADC 2 A0-A1 measures"
+        depends on DRIVER_ADC2_ENABLE
+        default DRIVER_ADC2_PAIR_A_MOTOR_AXIS3
+        help
+            The motor whose shunt this pair reads. Any overcurrent stops every motor; this only names the motor and its overcurrent bit.
+        config DRIVER_ADC2_PAIR_A_MOTOR_NONE
+            bool "None"
+        config DRIVER_ADC2_PAIR_A_MOTOR_AXIS1
+            bool "Axis 1 (base)"
+        config DRIVER_ADC2_PAIR_A_MOTOR_AXIS2
+            bool "Axis 2 (shoulder)"
+        config DRIVER_ADC2_PAIR_A_MOTOR_AXIS3
+            bool "Axis 3 (elbow)"
+        config DRIVER_ADC2_PAIR_A_MOTOR_AXIS4
+            bool "Axis 4 (wrist motor 4)"
+        config DRIVER_ADC2_PAIR_A_MOTOR_AXIS5
+            bool "Axis 5 (wrist motor 5)"
+        config DRIVER_ADC2_PAIR_A_MOTOR_GRIPPER
+            bool "Gripper"
+    endchoice
+
+    config DRIVER_ADC2_PAIR_A_MOTOR_ID
+        int
+        depends on DRIVER_ADC2_ENABLE
+        default 0 if DRIVER_ADC2_PAIR_A_MOTOR_NONE
+        default 1 if DRIVER_ADC2_PAIR_A_MOTOR_AXIS1
+        default 2 if DRIVER_ADC2_PAIR_A_MOTOR_AXIS2
+        default 3 if DRIVER_ADC2_PAIR_A_MOTOR_AXIS3
+        default 4 if DRIVER_ADC2_PAIR_A_MOTOR_AXIS4
+        default 5 if DRIVER_ADC2_PAIR_A_MOTOR_AXIS5
+        default 6 if DRIVER_ADC2_PAIR_A_MOTOR_GRIPPER
+
+    choice DRIVER_ADC2_PAIR_B_MOTOR_SEL
+        prompt "ADC 2 A2-A3 measures"
+        depends on DRIVER_ADC2_ENABLE
+        default DRIVER_ADC2_PAIR_B_MOTOR_AXIS4
+        help
+            The motor whose shunt this pair reads. Any overcurrent stops every motor; this only names the motor and its overcurrent bit.
+        config DRIVER_ADC2_PAIR_B_MOTOR_NONE
+            bool "None"
+        config DRIVER_ADC2_PAIR_B_MOTOR_AXIS1
+            bool "Axis 1 (base)"
+        config DRIVER_ADC2_PAIR_B_MOTOR_AXIS2
+            bool "Axis 2 (shoulder)"
+        config DRIVER_ADC2_PAIR_B_MOTOR_AXIS3
+            bool "Axis 3 (elbow)"
+        config DRIVER_ADC2_PAIR_B_MOTOR_AXIS4
+            bool "Axis 4 (wrist motor 4)"
+        config DRIVER_ADC2_PAIR_B_MOTOR_AXIS5
+            bool "Axis 5 (wrist motor 5)"
+        config DRIVER_ADC2_PAIR_B_MOTOR_GRIPPER
+            bool "Gripper"
+    endchoice
+
+    config DRIVER_ADC2_PAIR_B_MOTOR_ID
+        int
+        depends on DRIVER_ADC2_ENABLE
+        default 0 if DRIVER_ADC2_PAIR_B_MOTOR_NONE
+        default 1 if DRIVER_ADC2_PAIR_B_MOTOR_AXIS1
+        default 2 if DRIVER_ADC2_PAIR_B_MOTOR_AXIS2
+        default 3 if DRIVER_ADC2_PAIR_B_MOTOR_AXIS3
+        default 4 if DRIVER_ADC2_PAIR_B_MOTOR_AXIS4
+        default 5 if DRIVER_ADC2_PAIR_B_MOTOR_AXIS5
+        default 6 if DRIVER_ADC2_PAIR_B_MOTOR_GRIPPER
+
+    config DRIVER_ADC3_ENABLE
+        bool "ADC 3 (ADS1015)"
+        depends on DRIVER_CURRENT_SENSING_ENABLE
+        default y
+        help
+            On shunt board 2. Defaults: A0-A1 = Axis 5, A2-A3 = Gripper.
+
+    config DRIVER_ADC3_ADDRESS
+        hex "ADC 3 I2C address"
+        depends on DRIVER_ADC3_ENABLE
+        range 0x48 0x4B
+        default 0x4A
+        help
+            Set by the ADS1015 ADDR pin: GND = 0x48, VDD = 0x49, SDA = 0x4A,
+            SCL = 0x4B. Every ADC needs a different one.
+
+    config DRIVER_ADC3_RDY_PIN
+        int "ADC 3 RDY (ALERT) GPIO"
+        depends on DRIVER_ADC3_ENABLE
+        range 0 39
+        default 5
+        help
+            Every ADC needs its own RDY pin. Avoid GPIO 0, 2 and 12 (boot
+            strapping) and the I2C, encoder and limit switch pins.
+
+    choice DRIVER_ADC3_PAIR_A_MOTOR_SEL
+        prompt "ADC 3 A0-A1 measures"
+        depends on DRIVER_ADC3_ENABLE
+        default DRIVER_ADC3_PAIR_A_MOTOR_AXIS5
+        help
+            The motor whose shunt this pair reads. Any overcurrent stops every motor; this only names the motor and its overcurrent bit.
+        config DRIVER_ADC3_PAIR_A_MOTOR_NONE
+            bool "None"
+        config DRIVER_ADC3_PAIR_A_MOTOR_AXIS1
+            bool "Axis 1 (base)"
+        config DRIVER_ADC3_PAIR_A_MOTOR_AXIS2
+            bool "Axis 2 (shoulder)"
+        config DRIVER_ADC3_PAIR_A_MOTOR_AXIS3
+            bool "Axis 3 (elbow)"
+        config DRIVER_ADC3_PAIR_A_MOTOR_AXIS4
+            bool "Axis 4 (wrist motor 4)"
+        config DRIVER_ADC3_PAIR_A_MOTOR_AXIS5
+            bool "Axis 5 (wrist motor 5)"
+        config DRIVER_ADC3_PAIR_A_MOTOR_GRIPPER
+            bool "Gripper"
+    endchoice
+
+    config DRIVER_ADC3_PAIR_A_MOTOR_ID
+        int
+        depends on DRIVER_ADC3_ENABLE
+        default 0 if DRIVER_ADC3_PAIR_A_MOTOR_NONE
+        default 1 if DRIVER_ADC3_PAIR_A_MOTOR_AXIS1
+        default 2 if DRIVER_ADC3_PAIR_A_MOTOR_AXIS2
+        default 3 if DRIVER_ADC3_PAIR_A_MOTOR_AXIS3
+        default 4 if DRIVER_ADC3_PAIR_A_MOTOR_AXIS4
+        default 5 if DRIVER_ADC3_PAIR_A_MOTOR_AXIS5
+        default 6 if DRIVER_ADC3_PAIR_A_MOTOR_GRIPPER
+
+    choice DRIVER_ADC3_PAIR_B_MOTOR_SEL
+        prompt "ADC 3 A2-A3 measures"
+        depends on DRIVER_ADC3_ENABLE
+        default DRIVER_ADC3_PAIR_B_MOTOR_GRIPPER
+        help
+            The motor whose shunt this pair reads. Any overcurrent stops every motor; this only names the motor and its overcurrent bit.
+        config DRIVER_ADC3_PAIR_B_MOTOR_NONE
+            bool "None"
+        config DRIVER_ADC3_PAIR_B_MOTOR_AXIS1
+            bool "Axis 1 (base)"
+        config DRIVER_ADC3_PAIR_B_MOTOR_AXIS2
+            bool "Axis 2 (shoulder)"
+        config DRIVER_ADC3_PAIR_B_MOTOR_AXIS3
+            bool "Axis 3 (elbow)"
+        config DRIVER_ADC3_PAIR_B_MOTOR_AXIS4
+            bool "Axis 4 (wrist motor 4)"
+        config DRIVER_ADC3_PAIR_B_MOTOR_AXIS5
+            bool "Axis 5 (wrist motor 5)"
+        config DRIVER_ADC3_PAIR_B_MOTOR_GRIPPER
+            bool "Gripper"
+    endchoice
+
+    config DRIVER_ADC3_PAIR_B_MOTOR_ID
+        int
+        depends on DRIVER_ADC3_ENABLE
+        default 0 if DRIVER_ADC3_PAIR_B_MOTOR_NONE
+        default 1 if DRIVER_ADC3_PAIR_B_MOTOR_AXIS1
+        default 2 if DRIVER_ADC3_PAIR_B_MOTOR_AXIS2
+        default 3 if DRIVER_ADC3_PAIR_B_MOTOR_AXIS3
+        default 4 if DRIVER_ADC3_PAIR_B_MOTOR_AXIS4
+        default 5 if DRIVER_ADC3_PAIR_B_MOTOR_AXIS5
+        default 6 if DRIVER_ADC3_PAIR_B_MOTOR_GRIPPER
+
+    config DRIVER_ADC4_ENABLE
+        bool "ADC 4 (ADS1015)"
+        depends on DRIVER_CURRENT_SENSING_ENABLE
+        default n
+        help
+            Future fourth ADC. Both pairs default to None.
+
+    config DRIVER_ADC4_ADDRESS
+        hex "ADC 4 I2C address"
+        depends on DRIVER_ADC4_ENABLE
+        range 0x48 0x4B
+        default 0x4B
+        help
+            Set by the ADS1015 ADDR pin: GND = 0x48, VDD = 0x49, SDA = 0x4A,
+            SCL = 0x4B. Every ADC needs a different one.
+
+    config DRIVER_ADC4_RDY_PIN
+        int "ADC 4 RDY (ALERT) GPIO"
+        depends on DRIVER_ADC4_ENABLE
+        range 0 39
+        default 15
+        help
+            Every ADC needs its own RDY pin. Avoid GPIO 0, 2 and 12 (boot
+            strapping) and the I2C, encoder and limit switch pins.
+
+    choice DRIVER_ADC4_PAIR_A_MOTOR_SEL
+        prompt "ADC 4 A0-A1 measures"
+        depends on DRIVER_ADC4_ENABLE
+        default DRIVER_ADC4_PAIR_A_MOTOR_NONE
+        help
+            The motor whose shunt this pair reads. Any overcurrent stops every motor; this only names the motor and its overcurrent bit.
+        config DRIVER_ADC4_PAIR_A_MOTOR_NONE
+            bool "None"
+        config DRIVER_ADC4_PAIR_A_MOTOR_AXIS1
+            bool "Axis 1 (base)"
+        config DRIVER_ADC4_PAIR_A_MOTOR_AXIS2
+            bool "Axis 2 (shoulder)"
+        config DRIVER_ADC4_PAIR_A_MOTOR_AXIS3
+            bool "Axis 3 (elbow)"
+        config DRIVER_ADC4_PAIR_A_MOTOR_AXIS4
+            bool "Axis 4 (wrist motor 4)"
+        config DRIVER_ADC4_PAIR_A_MOTOR_AXIS5
+            bool "Axis 5 (wrist motor 5)"
+        config DRIVER_ADC4_PAIR_A_MOTOR_GRIPPER
+            bool "Gripper"
+    endchoice
+
+    config DRIVER_ADC4_PAIR_A_MOTOR_ID
+        int
+        depends on DRIVER_ADC4_ENABLE
+        default 0 if DRIVER_ADC4_PAIR_A_MOTOR_NONE
+        default 1 if DRIVER_ADC4_PAIR_A_MOTOR_AXIS1
+        default 2 if DRIVER_ADC4_PAIR_A_MOTOR_AXIS2
+        default 3 if DRIVER_ADC4_PAIR_A_MOTOR_AXIS3
+        default 4 if DRIVER_ADC4_PAIR_A_MOTOR_AXIS4
+        default 5 if DRIVER_ADC4_PAIR_A_MOTOR_AXIS5
+        default 6 if DRIVER_ADC4_PAIR_A_MOTOR_GRIPPER
+
+    choice DRIVER_ADC4_PAIR_B_MOTOR_SEL
+        prompt "ADC 4 A2-A3 measures"
+        depends on DRIVER_ADC4_ENABLE
+        default DRIVER_ADC4_PAIR_B_MOTOR_NONE
+        help
+            The motor whose shunt this pair reads. Any overcurrent stops every motor; this only names the motor and its overcurrent bit.
+        config DRIVER_ADC4_PAIR_B_MOTOR_NONE
+            bool "None"
+        config DRIVER_ADC4_PAIR_B_MOTOR_AXIS1
+            bool "Axis 1 (base)"
+        config DRIVER_ADC4_PAIR_B_MOTOR_AXIS2
+            bool "Axis 2 (shoulder)"
+        config DRIVER_ADC4_PAIR_B_MOTOR_AXIS3
+            bool "Axis 3 (elbow)"
+        config DRIVER_ADC4_PAIR_B_MOTOR_AXIS4
+            bool "Axis 4 (wrist motor 4)"
+        config DRIVER_ADC4_PAIR_B_MOTOR_AXIS5
+            bool "Axis 5 (wrist motor 5)"
+        config DRIVER_ADC4_PAIR_B_MOTOR_GRIPPER
+            bool "Gripper"
+    endchoice
+
+    config DRIVER_ADC4_PAIR_B_MOTOR_ID
+        int
+        depends on DRIVER_ADC4_ENABLE
+        default 0 if DRIVER_ADC4_PAIR_B_MOTOR_NONE
+        default 1 if DRIVER_ADC4_PAIR_B_MOTOR_AXIS1
+        default 2 if DRIVER_ADC4_PAIR_B_MOTOR_AXIS2
+        default 3 if DRIVER_ADC4_PAIR_B_MOTOR_AXIS3
+        default 4 if DRIVER_ADC4_PAIR_B_MOTOR_AXIS4
+        default 5 if DRIVER_ADC4_PAIR_B_MOTOR_AXIS5
+        default 6 if DRIVER_ADC4_PAIR_B_MOTOR_GRIPPER
 
     config DRIVER_ADS1015_DATA_RATE
         int "ADS1015 Data Rate"
@@ -162,53 +516,551 @@ menu "Talos ESP Driver Configuration"
 
 endmenu
 
+menu "Motors"
+    comment "Roles (Axes menu) and ADC pairs pick from these motors"
+
+    menu "Axis 1 (base)"
+        config DRIVER_MOTOR_AXIS1_HAT
+            int "Motor HAT (1 or 2)"
+            range 1 2 if DRIVER_MOTORHAT2_ENABLE
+            range 1 1
+            default 1
+            help
+                Which HAT this motor is plugged into. HAT 2 needs Second
+                MotorHAT enabled.
+
+        config DRIVER_MOTOR_AXIS1_PORT
+            int "Port on that HAT (1-4 = M1-M4)"
+            range 1 4
+            default 1
+
+        config DRIVER_MOTOR_AXIS1_ENCODER_A_PIN
+            int "Encoder channel A (P0) GPIO"
+            range 0 39
+            default 36
+
+        config DRIVER_MOTOR_AXIS1_ENCODER_B_PIN
+            int "Encoder channel B (P1) GPIO"
+            range 0 39
+            default 39
+
+        config DRIVER_MOTOR_AXIS1_SPEED
+            string "Pan speed (fraction of full PWM, 0 to 1)"
+            default "0.25"
+            help
+                Keep a stalled motor inside the TB6612's 1.0 A rating: speed no
+                higher than 1.0 A times the motor's winding resistance divided by
+                the 12 V supply. 0.25 is safe from about 3 ohms up.
+
+        config DRIVER_MOTOR_AXIS1_ENCODER_SLOTS
+            int "Encoder wheel slots"
+            range 1 1000
+            default 20
+
+        config DRIVER_MOTOR_AXIS1_GEARBOX_RATIO
+            string "Motor gearbox ratio (X:1)"
+            default "127.1"
+            help
+                ER-4u manual: motors 1-3 127.1:1, motors 4-5 65.5:1, gripper
+                19.5:1.
+
+        config DRIVER_MOTOR_AXIS1_PINION_TEETH
+            int "Transmission pinion (motor side) teeth"
+            range 1 1000
+            default 24
+            help
+                From the azimuth bring-up.
+
+        config DRIVER_MOTOR_AXIS1_DRIVEN_TEETH
+            int "Transmission driven (joint side) teeth"
+            range 1 1000
+            default 120
+            help
+                From the azimuth bring-up.
+
+        config DRIVER_MOTOR_AXIS1_RANGE_POS_DEG
+            int "Physical travel from home, positive-count direction (deg)"
+            range 0 360
+            default 133
+            help
+                Manual: 310 deg total. 133 each way is the azimuth bring-up value.
+
+        config DRIVER_MOTOR_AXIS1_RANGE_NEG_DEG
+            int "Physical travel from home, negative-count direction (deg)"
+            range 0 360
+            default 133
+            help
+                Manual: 310 deg total. 133 each way is the azimuth bring-up value.
+
+        config DRIVER_MOTOR_AXIS1_FWD_INCREASES
+            int "FORWARD increases encoder count (1) or decreases it (0)"
+            range 0 1
+            default 1
+            help
+                Bench: FORWARD raised the count.
+    endmenu
+
+    menu "Axis 2 (shoulder)"
+        config DRIVER_MOTOR_AXIS2_HAT
+            int "Motor HAT (1 or 2)"
+            range 1 2 if DRIVER_MOTORHAT2_ENABLE
+            range 1 1
+            default 1
+            help
+                Which HAT this motor is plugged into. HAT 2 needs Second
+                MotorHAT enabled.
+
+        config DRIVER_MOTOR_AXIS2_PORT
+            int "Port on that HAT (1-4 = M1-M4)"
+            range 1 4
+            default 2
+
+        config DRIVER_MOTOR_AXIS2_ENCODER_A_PIN
+            int "Encoder channel A (P0) GPIO"
+            range 0 39
+            default 34
+
+        config DRIVER_MOTOR_AXIS2_ENCODER_B_PIN
+            int "Encoder channel B (P1) GPIO"
+            range 0 39
+            default 35
+
+        config DRIVER_MOTOR_AXIS2_SPEED
+            string "Pan speed (fraction of full PWM, 0 to 1)"
+            default "0.25"
+            help
+                Keep a stalled motor inside the TB6612's 1.0 A rating: speed no
+                higher than 1.0 A times the motor's winding resistance divided by
+                the 12 V supply. 0.25 is safe from about 3 ohms up.
+
+        config DRIVER_MOTOR_AXIS2_ENCODER_SLOTS
+            int "Encoder wheel slots"
+            range 1 1000
+            default 20
+
+        config DRIVER_MOTOR_AXIS2_GEARBOX_RATIO
+            string "Motor gearbox ratio (X:1)"
+            default "127.1"
+            help
+                ER-4u manual: motors 1-3 127.1:1, motors 4-5 65.5:1, gripper
+                19.5:1.
+
+        config DRIVER_MOTOR_AXIS2_PINION_TEETH
+            int "Transmission pinion (motor side) teeth"
+            range 1 1000
+            default 20
+            help
+                PLACEHOLDER until bench tested. Old shoulder/elbow default; the real transmission is not counted yet.
+
+        config DRIVER_MOTOR_AXIS2_DRIVEN_TEETH
+            int "Transmission driven (joint side) teeth"
+            range 1 1000
+            default 72
+            help
+                PLACEHOLDER until bench tested. Old shoulder/elbow default; the real transmission is not counted yet.
+
+        config DRIVER_MOTOR_AXIS2_RANGE_POS_DEG
+            int "Physical travel from home, positive-count direction (deg)"
+            range 0 360
+            default 35
+            help
+                Manual: +130 / -35 deg. Which side counts positive is not checked yet, so both default to the smaller 35.
+
+        config DRIVER_MOTOR_AXIS2_RANGE_NEG_DEG
+            int "Physical travel from home, negative-count direction (deg)"
+            range 0 360
+            default 35
+            help
+                Manual: +130 / -35 deg. Which side counts positive is not checked yet, so both default to the smaller 35.
+
+        config DRIVER_MOTOR_AXIS2_FWD_INCREASES
+            int "FORWARD increases encoder count (1) or decreases it (0)"
+            range 0 1
+            default 1
+            help
+                PLACEHOLDER until bench tested. The axis 2 encoder did not count in the axis check.
+    endmenu
+
+    menu "Axis 3 (elbow)"
+        config DRIVER_MOTOR_AXIS3_HAT
+            int "Motor HAT (1 or 2)"
+            range 1 2 if DRIVER_MOTORHAT2_ENABLE
+            range 1 1
+            default 1
+            help
+                Which HAT this motor is plugged into. HAT 2 needs Second
+                MotorHAT enabled.
+
+        config DRIVER_MOTOR_AXIS3_PORT
+            int "Port on that HAT (1-4 = M1-M4)"
+            range 1 4
+            default 3
+
+        config DRIVER_MOTOR_AXIS3_ENCODER_A_PIN
+            int "Encoder channel A (P0) GPIO"
+            range 0 39
+            default 32
+
+        config DRIVER_MOTOR_AXIS3_ENCODER_B_PIN
+            int "Encoder channel B (P1) GPIO"
+            range 0 39
+            default 33
+
+        config DRIVER_MOTOR_AXIS3_SPEED
+            string "Pan speed (fraction of full PWM, 0 to 1)"
+            default "0.25"
+            help
+                Keep a stalled motor inside the TB6612's 1.0 A rating: speed no
+                higher than 1.0 A times the motor's winding resistance divided by
+                the 12 V supply. 0.25 is safe from about 3 ohms up.
+
+        config DRIVER_MOTOR_AXIS3_ENCODER_SLOTS
+            int "Encoder wheel slots"
+            range 1 1000
+            default 20
+
+        config DRIVER_MOTOR_AXIS3_GEARBOX_RATIO
+            string "Motor gearbox ratio (X:1)"
+            default "127.1"
+            help
+                ER-4u manual: motors 1-3 127.1:1, motors 4-5 65.5:1, gripper
+                19.5:1.
+
+        config DRIVER_MOTOR_AXIS3_PINION_TEETH
+            int "Transmission pinion (motor side) teeth"
+            range 1 1000
+            default 20
+            help
+                PLACEHOLDER until bench tested. Old shoulder/elbow default; the real transmission is not counted yet.
+
+        config DRIVER_MOTOR_AXIS3_DRIVEN_TEETH
+            int "Transmission driven (joint side) teeth"
+            range 1 1000
+            default 72
+            help
+                PLACEHOLDER until bench tested. Old shoulder/elbow default; the real transmission is not counted yet.
+
+        config DRIVER_MOTOR_AXIS3_RANGE_POS_DEG
+            int "Physical travel from home, positive-count direction (deg)"
+            range 0 360
+            default 130
+            help
+                Manual: +-130 deg.
+
+        config DRIVER_MOTOR_AXIS3_RANGE_NEG_DEG
+            int "Physical travel from home, negative-count direction (deg)"
+            range 0 360
+            default 130
+            help
+                Manual: +-130 deg.
+
+        config DRIVER_MOTOR_AXIS3_FWD_INCREASES
+            int "FORWARD increases encoder count (1) or decreases it (0)"
+            range 0 1
+            default 1
+            help
+                PLACEHOLDER until bench tested.
+    endmenu
+
+    menu "Axis 4 (wrist motor 4)"
+        config DRIVER_MOTOR_AXIS4_HAT
+            int "Motor HAT (1 or 2)"
+            range 1 2 if DRIVER_MOTORHAT2_ENABLE
+            range 1 1
+            default 1
+            help
+                Which HAT this motor is plugged into. HAT 2 needs Second
+                MotorHAT enabled.
+
+        config DRIVER_MOTOR_AXIS4_PORT
+            int "Port on that HAT (1-4 = M1-M4)"
+            range 1 4
+            default 4
+
+        config DRIVER_MOTOR_AXIS4_ENCODER_A_PIN
+            int "Encoder channel A (P0) GPIO"
+            range 0 39
+            default 25
+
+        config DRIVER_MOTOR_AXIS4_ENCODER_B_PIN
+            int "Encoder channel B (P1) GPIO"
+            range 0 39
+            default 26
+
+        config DRIVER_MOTOR_AXIS4_SPEED
+            string "Pan speed (fraction of full PWM, 0 to 1)"
+            default "0.25"
+            help
+                Keep a stalled motor inside the TB6612's 1.0 A rating: speed no
+                higher than 1.0 A times the motor's winding resistance divided by
+                the 12 V supply. 0.25 is safe from about 3 ohms up.
+
+        config DRIVER_MOTOR_AXIS4_ENCODER_SLOTS
+            int "Encoder wheel slots"
+            range 1 1000
+            default 20
+
+        config DRIVER_MOTOR_AXIS4_GEARBOX_RATIO
+            string "Motor gearbox ratio (X:1)"
+            default "65.5"
+            help
+                ER-4u manual: motors 1-3 127.1:1, motors 4-5 65.5:1, gripper
+                19.5:1.
+
+        config DRIVER_MOTOR_AXIS4_PINION_TEETH
+            int "Transmission pinion (motor side) teeth"
+            range 1 1000
+            default 12
+            help
+                ER-4pc wrist values from the altitude bring-up.
+
+        config DRIVER_MOTOR_AXIS4_DRIVEN_TEETH
+            int "Transmission driven (joint side) teeth"
+            range 1 1000
+            default 23
+            help
+                ER-4pc wrist values from the altitude bring-up.
+
+        config DRIVER_MOTOR_AXIS4_RANGE_POS_DEG
+            int "Physical travel from home, positive-count direction (deg)"
+            range 0 360
+            default 45
+            help
+                Wrist bring-up value. Manual: wrist pitch +-130 deg (motors 4 and 5 together).
+
+        config DRIVER_MOTOR_AXIS4_RANGE_NEG_DEG
+            int "Physical travel from home, negative-count direction (deg)"
+            range 0 360
+            default 45
+            help
+                Wrist bring-up value. Manual: wrist pitch +-130 deg (motors 4 and 5 together).
+
+        config DRIVER_MOTOR_AXIS4_FWD_INCREASES
+            int "FORWARD increases encoder count (1) or decreases it (0)"
+            range 0 1
+            default 0
+            help
+                Bench: FORWARD lowered the count.
+    endmenu
+
+    menu "Axis 5 (wrist motor 5)"
+        config DRIVER_MOTOR_AXIS5_HAT
+            int "Motor HAT (1 or 2)"
+            range 1 2 if DRIVER_MOTORHAT2_ENABLE
+            range 1 1
+            default 2
+            help
+                Which HAT this motor is plugged into. HAT 2 needs Second
+                MotorHAT enabled.
+
+        config DRIVER_MOTOR_AXIS5_PORT
+            int "Port on that HAT (1-4 = M1-M4)"
+            range 1 4
+            default 3
+
+        config DRIVER_MOTOR_AXIS5_ENCODER_A_PIN
+            int "Encoder channel A (P0) GPIO"
+            range 0 39
+            default 27
+
+        config DRIVER_MOTOR_AXIS5_ENCODER_B_PIN
+            int "Encoder channel B (P1) GPIO"
+            range 0 39
+            default 14
+
+        config DRIVER_MOTOR_AXIS5_SPEED
+            string "Pan speed (fraction of full PWM, 0 to 1)"
+            default "0.25"
+            help
+                Keep a stalled motor inside the TB6612's 1.0 A rating: speed no
+                higher than 1.0 A times the motor's winding resistance divided by
+                the 12 V supply. 0.25 is safe from about 3 ohms up.
+
+        config DRIVER_MOTOR_AXIS5_ENCODER_SLOTS
+            int "Encoder wheel slots"
+            range 1 1000
+            default 20
+
+        config DRIVER_MOTOR_AXIS5_GEARBOX_RATIO
+            string "Motor gearbox ratio (X:1)"
+            default "65.5"
+            help
+                ER-4u manual: motors 1-3 127.1:1, motors 4-5 65.5:1, gripper
+                19.5:1.
+
+        config DRIVER_MOTOR_AXIS5_PINION_TEETH
+            int "Transmission pinion (motor side) teeth"
+            range 1 1000
+            default 12
+            help
+                ER-4pc wrist values from the altitude bring-up.
+
+        config DRIVER_MOTOR_AXIS5_DRIVEN_TEETH
+            int "Transmission driven (joint side) teeth"
+            range 1 1000
+            default 23
+            help
+                ER-4pc wrist values from the altitude bring-up.
+
+        config DRIVER_MOTOR_AXIS5_RANGE_POS_DEG
+            int "Physical travel from home, positive-count direction (deg)"
+            range 0 360
+            default 45
+            help
+                Wrist bring-up value. Manual: wrist roll is unlimited mechanically.
+
+        config DRIVER_MOTOR_AXIS5_RANGE_NEG_DEG
+            int "Physical travel from home, negative-count direction (deg)"
+            range 0 360
+            default 45
+            help
+                Wrist bring-up value. Manual: wrist roll is unlimited mechanically.
+
+        config DRIVER_MOTOR_AXIS5_FWD_INCREASES
+            int "FORWARD increases encoder count (1) or decreases it (0)"
+            range 0 1
+            default 1
+            help
+                Bench: FORWARD raised the count.
+    endmenu
+
+    menu "Gripper"
+        config DRIVER_MOTOR_GRIPPER_HAT
+            int "Motor HAT (1 or 2)"
+            range 1 2 if DRIVER_MOTORHAT2_ENABLE
+            range 1 1
+            default 2
+            help
+                Which HAT this motor is plugged into. HAT 2 needs Second
+                MotorHAT enabled.
+
+        config DRIVER_MOTOR_GRIPPER_PORT
+            int "Port on that HAT (1-4 = M1-M4)"
+            range 1 4
+            default 4
+
+        config DRIVER_MOTOR_GRIPPER_ENCODER_A_PIN
+            int "Encoder channel A (P0) GPIO"
+            range 0 39
+            default 13
+
+        config DRIVER_MOTOR_GRIPPER_ENCODER_B_PIN
+            int "Encoder channel B (P1) GPIO"
+            range 0 39
+            default 4
+
+        config DRIVER_MOTOR_GRIPPER_SPEED
+            string "Pan speed (fraction of full PWM, 0 to 1)"
+            default "0.25"
+            help
+                Keep a stalled motor inside the TB6612's 1.0 A rating: speed no
+                higher than 1.0 A times the motor's winding resistance divided by
+                the 12 V supply. 0.25 is safe from about 3 ohms up.
+
+        config DRIVER_MOTOR_GRIPPER_ENCODER_SLOTS
+            int "Encoder wheel slots"
+            range 1 1000
+            default 20
+
+        config DRIVER_MOTOR_GRIPPER_GEARBOX_RATIO
+            string "Motor gearbox ratio (X:1)"
+            default "19.5"
+            help
+                ER-4u manual: motors 1-3 127.1:1, motors 4-5 65.5:1, gripper
+                19.5:1.
+
+        config DRIVER_MOTOR_GRIPPER_PINION_TEETH
+            int "Transmission pinion (motor side) teeth"
+            range 1 1000
+            default 1
+            help
+                PLACEHOLDER until bench tested. 1:1 means no transmission after the gearbox.
+
+        config DRIVER_MOTOR_GRIPPER_DRIVEN_TEETH
+            int "Transmission driven (joint side) teeth"
+            range 1 1000
+            default 1
+            help
+                PLACEHOLDER until bench tested. 1:1 means no transmission after the gearbox.
+
+        config DRIVER_MOTOR_GRIPPER_RANGE_POS_DEG
+            int "Physical travel from home, positive-count direction (deg)"
+            range 0 360
+            default 45
+            help
+                PLACEHOLDER until bench tested. Degrees here are motor output degrees, not finger travel.
+
+        config DRIVER_MOTOR_GRIPPER_RANGE_NEG_DEG
+            int "Physical travel from home, negative-count direction (deg)"
+            range 0 360
+            default 45
+            help
+                PLACEHOLDER until bench tested. Degrees here are motor output degrees, not finger travel.
+
+        config DRIVER_MOTOR_GRIPPER_FWD_INCREASES
+            int "FORWARD increases encoder count (1) or decreases it (0)"
+            range 0 1
+            default 1
+            help
+                PLACEHOLDER until bench tested. The gripper encoder did not count in the axis check.
+    endmenu
+
+endmenu
+
 menu "Axes"
-    config DRIVER_AZIMUTH_MOTOR
-        int "Motor HAT port driving azimuth (base), 1-4 = HAT 1 M1-M4, 5-8 = HAT 2"
-        range 1 8 if DRIVER_MOTORHAT2_ENABLE
-        range 1 4
-        default 3
+    comment "Which motor plays each role. Motor values are in the Motors menu."
 
-    config DRIVER_AZIMUTH_ENCODER_A_PIN
-        int "Azimuth encoder channel A (P0) GPIO"
-        range 0 39
-        default 36
+    choice DRIVER_AZIMUTH_MOTOR_SEL
+        prompt "Azimuth (pan) motor"
+        default DRIVER_AZIMUTH_MOTOR_AXIS1
+        config DRIVER_AZIMUTH_MOTOR_AXIS1
+            bool "Axis 1 (base)"
+        config DRIVER_AZIMUTH_MOTOR_AXIS2
+            bool "Axis 2 (shoulder)"
+        config DRIVER_AZIMUTH_MOTOR_AXIS3
+            bool "Axis 3 (elbow)"
+        config DRIVER_AZIMUTH_MOTOR_AXIS4
+            bool "Axis 4 (wrist motor 4)"
+        config DRIVER_AZIMUTH_MOTOR_AXIS5
+            bool "Axis 5 (wrist motor 5)"
+        config DRIVER_AZIMUTH_MOTOR_GRIPPER
+            bool "Gripper"
+    endchoice
 
-    config DRIVER_AZIMUTH_ENCODER_B_PIN
-        int "Azimuth encoder channel B (P1) GPIO"
-        range 0 39
-        default 39
+    config DRIVER_AZIMUTH_MOTOR_ID
+        int
+        default 1 if DRIVER_AZIMUTH_MOTOR_AXIS1
+        default 2 if DRIVER_AZIMUTH_MOTOR_AXIS2
+        default 3 if DRIVER_AZIMUTH_MOTOR_AXIS3
+        default 4 if DRIVER_AZIMUTH_MOTOR_AXIS4
+        default 5 if DRIVER_AZIMUTH_MOTOR_AXIS5
+        default 6 if DRIVER_AZIMUTH_MOTOR_GRIPPER
 
-    config DRIVER_ALTITUDE_MOTOR
-        int "Motor HAT port driving altitude, 1-4 = HAT 1 M1-M4, 5-8 = HAT 2"
-        range 1 8 if DRIVER_MOTORHAT2_ENABLE
-        range 1 4
-        default 4
+    choice DRIVER_ALTITUDE_MOTOR_SEL
+        prompt "Altitude (tilt) motor"
+        default DRIVER_ALTITUDE_MOTOR_AXIS4
+        config DRIVER_ALTITUDE_MOTOR_AXIS1
+            bool "Axis 1 (base)"
+        config DRIVER_ALTITUDE_MOTOR_AXIS2
+            bool "Axis 2 (shoulder)"
+        config DRIVER_ALTITUDE_MOTOR_AXIS3
+            bool "Axis 3 (elbow)"
+        config DRIVER_ALTITUDE_MOTOR_AXIS4
+            bool "Axis 4 (wrist motor 4)"
+        config DRIVER_ALTITUDE_MOTOR_AXIS5
+            bool "Axis 5 (wrist motor 5)"
+        config DRIVER_ALTITUDE_MOTOR_GRIPPER
+            bool "Gripper"
+    endchoice
 
-    config DRIVER_ALTITUDE_ENCODER_A_PIN
-        int "Altitude encoder channel A (P0) GPIO"
-        range 0 39
-        default 34
-
-    config DRIVER_ALTITUDE_ENCODER_B_PIN
-        int "Altitude encoder channel B (P1) GPIO"
-        range 0 39
-        default 35
-
-    config DRIVER_AZIMUTH_PAN_SPEED
-        string "Azimuth pan speed (fraction of full PWM, 0 to 1)"
-        default "0.25"
-        help
-            Keep a stalled motor inside the TB6612's 1.0 A rating: speed no
-            higher than 1.0 A times the motor's winding resistance divided by
-            the 12 V supply. 0.25 is safe from about 3 ohms up.
-
-    config DRIVER_ALTITUDE_PAN_SPEED
-        string "Altitude pan speed (fraction of full PWM, 0 to 1)"
-        default "0.25"
-        help
-            Used for both wrist motors when the second altitude motor is
-            enabled. Same stall rule as the azimuth speed.
+    config DRIVER_ALTITUDE_MOTOR_ID
+        int
+        default 1 if DRIVER_ALTITUDE_MOTOR_AXIS1
+        default 2 if DRIVER_ALTITUDE_MOTOR_AXIS2
+        default 3 if DRIVER_ALTITUDE_MOTOR_AXIS3
+        default 4 if DRIVER_ALTITUDE_MOTOR_AXIS4
+        default 5 if DRIVER_ALTITUDE_MOTOR_AXIS5
+        default 6 if DRIVER_ALTITUDE_MOTOR_GRIPPER
 
     config DRIVER_ALTITUDE_B_ENABLE
         bool "Drive altitude with a second motor (ER-4pc wrist pitch)"
@@ -219,12 +1071,33 @@ menu "Axes"
             motor alone rolls it. When enabled, altitude commands drive both
             wrist motors, and if either one stops the other stops too.
 
-    config DRIVER_ALTITUDE_B_MOTOR
-        int "Motor HAT port driving the second altitude motor, 1-4 = HAT 1 M1-M4, 5-8 = HAT 2"
+    choice DRIVER_ALTITUDE_B_MOTOR_SEL
+        prompt "Second altitude motor"
         depends on DRIVER_ALTITUDE_B_ENABLE
-        range 1 8 if DRIVER_MOTORHAT2_ENABLE
-        range 1 4
-        default 2
+        default DRIVER_ALTITUDE_B_MOTOR_AXIS5
+        config DRIVER_ALTITUDE_B_MOTOR_AXIS1
+            bool "Axis 1 (base)"
+        config DRIVER_ALTITUDE_B_MOTOR_AXIS2
+            bool "Axis 2 (shoulder)"
+        config DRIVER_ALTITUDE_B_MOTOR_AXIS3
+            bool "Axis 3 (elbow)"
+        config DRIVER_ALTITUDE_B_MOTOR_AXIS4
+            bool "Axis 4 (wrist motor 4)"
+        config DRIVER_ALTITUDE_B_MOTOR_AXIS5
+            bool "Axis 5 (wrist motor 5)"
+        config DRIVER_ALTITUDE_B_MOTOR_GRIPPER
+            bool "Gripper"
+    endchoice
+
+    config DRIVER_ALTITUDE_B_MOTOR_ID
+        int
+        depends on DRIVER_ALTITUDE_B_ENABLE
+        default 1 if DRIVER_ALTITUDE_B_MOTOR_AXIS1
+        default 2 if DRIVER_ALTITUDE_B_MOTOR_AXIS2
+        default 3 if DRIVER_ALTITUDE_B_MOTOR_AXIS3
+        default 4 if DRIVER_ALTITUDE_B_MOTOR_AXIS4
+        default 5 if DRIVER_ALTITUDE_B_MOTOR_AXIS5
+        default 6 if DRIVER_ALTITUDE_B_MOTOR_GRIPPER
 
     config DRIVER_ALTITUDE_B_REVERSED
         bool "Drive the second altitude motor opposite to the first"
@@ -235,18 +1108,6 @@ menu "Axes"
             opposite directions. If a tilt command rolls the wrist on the
             bench instead, the motors are wired the other way around: change
             this.
-
-    config DRIVER_ALTITUDE_B_ENCODER_A_PIN
-        int "Second altitude motor encoder channel A (P0) GPIO"
-        depends on DRIVER_ALTITUDE_B_ENABLE
-        range 0 39
-        default 27
-
-    config DRIVER_ALTITUDE_B_ENCODER_B_PIN
-        int "Second altitude motor encoder channel B (P1) GPIO"
-        depends on DRIVER_ALTITUDE_B_ENABLE
-        range 0 39
-        default 14
 
 endmenu
 
@@ -269,80 +1130,5 @@ menu "Soft Limits"
         range 1 100
         default 10
 
-    menu "Azimuth axis"
-        config DRIVER_SOFT_LIMITS_AZIMUTH_ENCODER_SLOTS
-            int "Encoder wheel slots"
-            range 1 1000
-            default 20
-        config DRIVER_SOFT_LIMITS_AZIMUTH_GEARBOX_RATIO
-            string "Motor gearbox ratio (X:1)"
-            default "127.1"
-        config DRIVER_SOFT_LIMITS_AZIMUTH_PINION_TEETH
-            int "Transmission pinion (motor side) teeth"
-            range 1 1000
-            default 24
-        config DRIVER_SOFT_LIMITS_AZIMUTH_DRIVEN_TEETH
-            int "Transmission driven (joint side) teeth"
-            range 1 1000
-            default 120
-        config DRIVER_SOFT_LIMITS_AZIMUTH_RANGE_POS_DEG
-            int "Physical travel from home, positive-count direction (deg)"
-            range 0 360
-            default 133
-        config DRIVER_SOFT_LIMITS_AZIMUTH_RANGE_NEG_DEG
-            int "Physical travel from home, negative-count direction (deg)"
-            range 0 360
-            default 133
-        config DRIVER_SOFT_LIMITS_AZIMUTH_FWD_INCREASES
-            int "FORWARD increases encoder count (1) or decreases it (0)"
-            range 0 1
-            default 1
-            help
-                PLACEHOLDER until bench tested. Set to 1 if driving this
-                axis's motor FORWARD makes its encoder count go up, 0 if it
-                makes the count go down.
-    endmenu
-
-    menu "Altitude axis"
-        config DRIVER_SOFT_LIMITS_ALTITUDE_ENCODER_SLOTS
-            int "Encoder wheel slots"
-            range 1 1000
-            default 20
-        config DRIVER_SOFT_LIMITS_ALTITUDE_GEARBOX_RATIO
-            string "Motor gearbox ratio (X:1)"
-            default "65.5"
-        config DRIVER_SOFT_LIMITS_ALTITUDE_PINION_TEETH
-            int "Transmission pinion (motor side) teeth"
-            range 1 1000
-            default 12
-        config DRIVER_SOFT_LIMITS_ALTITUDE_DRIVEN_TEETH
-            int "Transmission driven (joint side) teeth"
-            range 1 1000
-            default 23
-        config DRIVER_SOFT_LIMITS_ALTITUDE_RANGE_POS_DEG
-            int "Physical travel from home, positive-count direction (deg)"
-            range 0 360
-            default 45
-        config DRIVER_SOFT_LIMITS_ALTITUDE_RANGE_NEG_DEG
-            int "Physical travel from home, negative-count direction (deg)"
-            range 0 360
-            default 45
-        config DRIVER_SOFT_LIMITS_ALTITUDE_FWD_INCREASES
-            int "FORWARD increases encoder count (1) or decreases it (0)"
-            range 0 1
-            default 1
-            help
-                PLACEHOLDER until bench tested. Set to 1 if driving this
-                axis's motor FORWARD makes its encoder count go up, 0 if it
-                makes the count go down.
-
-        config DRIVER_SOFT_LIMITS_ALTITUDE_B_FWD_INCREASES
-            int "Second altitude motor: FORWARD increases encoder count (1) or not (0)"
-            depends on DRIVER_ALTITUDE_B_ENABLE
-            range 0 1
-            default 1
-            help
-                PLACEHOLDER until bench tested. The second altitude motor
-                uses the gearing and travel set above for altitude.
-    endmenu
+    comment "Gearing and travel for each motor are in the Motors menu"
 endmenu

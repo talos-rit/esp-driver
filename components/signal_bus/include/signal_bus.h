@@ -6,6 +6,10 @@
 #include "freertos/event_groups.h"
 
 // Motor event bits
+// Overcurrent, one bit per motor port: CURRENT_0 = port 1 (HAT 1 M1) ...
+// CURRENT_7 = port 8 (HAT 2 M4)
+#define CURRENT_NUM_BITS 8
+#define CURRENT_BIT(port_index) (1 << (port_index))  // port_index 0-7
 #define CURRENT_0   (1 << 0)
 #define CURRENT_1   (1 << 1)
 #define CURRENT_2   (1 << 2)
@@ -13,19 +17,20 @@
 #define CURRENT_4   (1 << 4)
 #define CURRENT_5   (1 << 5)
 #define CURRENT_6   (1 << 6)
+#define CURRENT_7   (1 << 7)
 
-#define LIMIT_0 (1 << 7)
-#define LIMIT_1 (1 << 8)
-#define LIMIT_2 (1 << 9)
-#define LIMIT_3 (1 << 10)
-#define LIMIT_4 (1 << 11)
-#define LIMIT_5 (1 << 12)
-#define LIMIT_6 (1 << 13)
+#define LIMIT_0 (1 << 8)
+#define LIMIT_1 (1 << 9)
+#define LIMIT_2 (1 << 10)
+#define LIMIT_3 (1 << 11)
+#define LIMIT_4 (1 << 12)
+#define LIMIT_5 (1 << 13)
+#define LIMIT_6 (1 << 14)
 
-#define HOMING_FLAG (1 << 14)
+#define HOMING_FLAG (1 << 15)
 
-#define CURRENT_ANY (0x007F)  // bits 0-6
-#define LIMIT_ANY   (0x3F80)  // bits 7-13
+#define CURRENT_ANY (0x00FF)  // bits 0-7
+#define LIMIT_ANY   (0x7F00)  // bits 8-14
 #define HOME_EVENT  (CURRENT_ANY | LIMIT_ANY)
 #define EVENT_ANY   (HOME_EVENT | HOMING_FLAG)
 

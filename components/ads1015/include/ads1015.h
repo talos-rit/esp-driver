@@ -125,14 +125,27 @@ typedef struct {
   i2c_master_bus_handle_t bus_handle; /**< I2C master bus handle */
   gpio_num_t rdy_gpio;                /**< GPIO number for ALERT pin */
   uint8_t adc_data_rate;              /**< Data rate setting for ADC conversions */
+  /**
+   * Motor port (1-8) whose shunt each differential pair measures:
+   * [0] = A0-A1, [1] = A2-A3. 0 = pair not watched. A reading past the
+   * threshold sets that port's CURRENT bit on the signal bus. With both 0 the
+   * chip is only set up for register access: no RDY interrupt, no task.
+   */
+  uint8_t pair_motor[2];
 } ads1015_config_t;
 
 /**
  * @brief ADS1015 device handle
+ *
+ * Each ADS1015 needs its own handle, and the handle must stay valid for as
+ * long as the chip is watched (its task and RDY interrupt use it).
  */
 typedef struct {
   i2c_master_dev_handle_t dev_handle; /**< I2C device handle */
   uint16_t config_reg;                /**< ADS1015 config register values */
+  uint8_t i2c_addr;                   /**< For log messages */
+  uint8_t pair_motor[2];              /**< Copied from the config */
+  TaskHandle_t task;                  /**< Watch task, woken by this chip's RDY */
 } ads1015_handle_t;
 
 /**
