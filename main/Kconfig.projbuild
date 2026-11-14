@@ -508,11 +508,15 @@ menu "Talos ESP Driver Configuration"
 
     config DRIVER_HOMING_ENABLE
         bool "Allow the home command"
-        default y
+        default n
         help
             When off, the home command is rejected and the encoders stay
             zeroed at the boot position. Separate from soft limits so homing
             can run with soft limits on.
+
+            Off by default: a homing run cannot yet be stopped by STOP, a
+            client disconnect or the Pi link, and has no timeout; only the
+            limit switch or the e-stop ends it.
 
 endmenu
 
@@ -1114,7 +1118,7 @@ endmenu
 menu "Soft Limits"
     config DRIVER_SOFT_LIMITS_ENABLE
         bool "Enable encoder soft limits"
-        default n
+        default y
         help
             Stops an axis once its encoder count passes a bound computed from
             the values below. Count 0 is the boot position until a home
