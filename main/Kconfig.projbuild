@@ -91,7 +91,8 @@ menu "Talos ESP Driver Configuration"
         depends on DRIVER_ADC1_ENABLE
         default DRIVER_ADC1_PAIR_A_MOTOR_AXIS1
         help
-            The motor whose shunt this pair reads. Any overcurrent stops every motor; this only names the motor and its overcurrent bit.
+            The motor whose shunt this pair reads. Any overcurrent stops every
+            motor; this only names the motor and its overcurrent bit.
         config DRIVER_ADC1_PAIR_A_MOTOR_NONE
             bool "None"
         config DRIVER_ADC1_PAIR_A_MOTOR_AXIS1
@@ -124,7 +125,8 @@ menu "Talos ESP Driver Configuration"
         depends on DRIVER_ADC1_ENABLE
         default DRIVER_ADC1_PAIR_B_MOTOR_AXIS2
         help
-            The motor whose shunt this pair reads. Any overcurrent stops every motor; this only names the motor and its overcurrent bit.
+            The motor whose shunt this pair reads. Any overcurrent stops every
+            motor; this only names the motor and its overcurrent bit.
         config DRIVER_ADC1_PAIR_B_MOTOR_NONE
             bool "None"
         config DRIVER_ADC1_PAIR_B_MOTOR_AXIS1
@@ -182,7 +184,8 @@ menu "Talos ESP Driver Configuration"
         depends on DRIVER_ADC2_ENABLE
         default DRIVER_ADC2_PAIR_A_MOTOR_AXIS3
         help
-            The motor whose shunt this pair reads. Any overcurrent stops every motor; this only names the motor and its overcurrent bit.
+            The motor whose shunt this pair reads. Any overcurrent stops every
+            motor; this only names the motor and its overcurrent bit.
         config DRIVER_ADC2_PAIR_A_MOTOR_NONE
             bool "None"
         config DRIVER_ADC2_PAIR_A_MOTOR_AXIS1
@@ -215,7 +218,8 @@ menu "Talos ESP Driver Configuration"
         depends on DRIVER_ADC2_ENABLE
         default DRIVER_ADC2_PAIR_B_MOTOR_AXIS4
         help
-            The motor whose shunt this pair reads. Any overcurrent stops every motor; this only names the motor and its overcurrent bit.
+            The motor whose shunt this pair reads. Any overcurrent stops every
+            motor; this only names the motor and its overcurrent bit.
         config DRIVER_ADC2_PAIR_B_MOTOR_NONE
             bool "None"
         config DRIVER_ADC2_PAIR_B_MOTOR_AXIS1
@@ -273,7 +277,8 @@ menu "Talos ESP Driver Configuration"
         depends on DRIVER_ADC3_ENABLE
         default DRIVER_ADC3_PAIR_A_MOTOR_AXIS5
         help
-            The motor whose shunt this pair reads. Any overcurrent stops every motor; this only names the motor and its overcurrent bit.
+            The motor whose shunt this pair reads. Any overcurrent stops every
+            motor; this only names the motor and its overcurrent bit.
         config DRIVER_ADC3_PAIR_A_MOTOR_NONE
             bool "None"
         config DRIVER_ADC3_PAIR_A_MOTOR_AXIS1
@@ -306,7 +311,8 @@ menu "Talos ESP Driver Configuration"
         depends on DRIVER_ADC3_ENABLE
         default DRIVER_ADC3_PAIR_B_MOTOR_GRIPPER
         help
-            The motor whose shunt this pair reads. Any overcurrent stops every motor; this only names the motor and its overcurrent bit.
+            The motor whose shunt this pair reads. Any overcurrent stops every
+            motor; this only names the motor and its overcurrent bit.
         config DRIVER_ADC3_PAIR_B_MOTOR_NONE
             bool "None"
         config DRIVER_ADC3_PAIR_B_MOTOR_AXIS1
@@ -364,7 +370,8 @@ menu "Talos ESP Driver Configuration"
         depends on DRIVER_ADC4_ENABLE
         default DRIVER_ADC4_PAIR_A_MOTOR_NONE
         help
-            The motor whose shunt this pair reads. Any overcurrent stops every motor; this only names the motor and its overcurrent bit.
+            The motor whose shunt this pair reads. Any overcurrent stops every
+            motor; this only names the motor and its overcurrent bit.
         config DRIVER_ADC4_PAIR_A_MOTOR_NONE
             bool "None"
         config DRIVER_ADC4_PAIR_A_MOTOR_AXIS1
@@ -397,7 +404,8 @@ menu "Talos ESP Driver Configuration"
         depends on DRIVER_ADC4_ENABLE
         default DRIVER_ADC4_PAIR_B_MOTOR_NONE
         help
-            The motor whose shunt this pair reads. Any overcurrent stops every motor; this only names the motor and its overcurrent bit.
+            The motor whose shunt this pair reads. Any overcurrent stops every
+            motor; this only names the motor and its overcurrent bit.
         config DRIVER_ADC4_PAIR_B_MOTOR_NONE
             bool "None"
         config DRIVER_ADC4_PAIR_B_MOTOR_AXIS1
@@ -668,14 +676,16 @@ menu "Motors"
             range 0 360
             default 35
             help
-                Manual: +130 / -35 deg. Which side counts positive is not checked yet, so both default to the smaller 35.
+                Manual: +130 / -35 deg. Which side counts positive is not checked
+                yet, so both default to the smaller 35.
 
         config DRIVER_MOTOR_AXIS2_RANGE_NEG_DEG
             int "Physical travel from home, negative-count direction (deg)"
             range 0 360
             default 35
             help
-                Manual: +130 / -35 deg. Which side counts positive is not checked yet, so both default to the smaller 35.
+                Manual: +130 / -35 deg. Which side counts positive is not checked
+                yet, so both default to the smaller 35.
 
         config DRIVER_MOTOR_AXIS2_FWD_INCREASES
             int "FORWARD increases encoder count (1) or decreases it (0)"
@@ -1123,7 +1133,7 @@ menu "Soft Limits"
             Stops an axis once its encoder count passes a bound computed from
             the values below. Count 0 is the boot position until a home
             command re-zeroes it at the limit switch.
-            
+
     config DRIVER_SOFT_LIMITS_PERCENT
         int "Percent of physical travel allowed on each side of home"
         range 1 100
@@ -1134,5 +1144,5 @@ menu "Soft Limits"
         range 1 100
         default 10
 
-    comment "Gearing and travel for each motor are in the Motors menu"
+        comment "Gearing and travel for each motor are in the Motors menu"
 endmenu
