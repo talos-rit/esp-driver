@@ -104,7 +104,8 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
   }
   int num_motors = config->num_hats * MOTORHAT_MOTORS_PER_HAT;
 
-  int num_axes = MOTORHAT_NUM_ACTIVE_AXES;
+  int num_axes = config->altitude_b_enabled ? MOTORHAT_NUM_AXES
+                                          : MOTORHAT_AXIS_ALTITUDE_B;
   // Each axis needs its own valid port, or two axes would fight over one motor
   for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < num_axes; axis++) {
     motorhat_motor_t motor = config->axis_motor[axis];

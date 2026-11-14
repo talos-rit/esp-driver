@@ -560,6 +560,17 @@ void app_main(void) {
       ESP_LOGE(TAG, "Failed to get encoder count: %s", esp_err_to_name(err));
     }
     ESP_LOGI(TAG, "Azimuth (%s) count: %i", azimuth_name, azimuth_count);
+    int altitude_count = 0;
+    encoder_get_raw_count(&encoders[MOTORHAT_AXIS_ALTITUDE], &altitude_count);
+#ifdef CONFIG_DRIVER_ALTITUDE_B_ENABLE
+    int altitude_b_count = 0;
+    encoder_get_raw_count(&encoders[MOTORHAT_AXIS_ALTITUDE_B],
+                          &altitude_b_count);
+    ESP_LOGI(TAG, "Altitude count: %i   Altitude B count: %i", altitude_count,
+             altitude_b_count);
+#else
+    ESP_LOGI(TAG, "Altitude count: %i", altitude_count);
+#endif
 
     vTaskDelay(pdMS_TO_TICKS(500));  // Avoid busy loop
 
