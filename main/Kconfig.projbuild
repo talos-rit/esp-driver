@@ -803,11 +803,12 @@ menu "Motors"
 
         config DRIVER_MOTOR_AXIS4_SPEED
             string "Pan speed (fraction of full PWM, 0 to 1)"
-            default "0.25"
+            default "0.5"
             help
                 Keep a stalled motor inside the TB6612's 1.0 A rating: speed no
                 higher than 1.0 A times the motor's winding resistance divided by
-                the 12 V supply. 0.25 is safe from about 3 ohms up.
+                the 12 V supply. Bluey's wrist motors measure 9 ohms, so up to
+                0.75 is safe; at 0.25 they stall against the wrist.
 
         config DRIVER_MOTOR_AXIS4_ENCODER_SLOTS
             int "Encoder wheel slots"
@@ -884,11 +885,12 @@ menu "Motors"
 
         config DRIVER_MOTOR_AXIS5_SPEED
             string "Pan speed (fraction of full PWM, 0 to 1)"
-            default "0.25"
+            default "0.5"
             help
                 Keep a stalled motor inside the TB6612's 1.0 A rating: speed no
                 higher than 1.0 A times the motor's winding resistance divided by
-                the 12 V supply. 0.25 is safe from about 3 ohms up.
+                the 12 V supply. Bluey's wrist motors measure 9 ohms, so up to
+                0.75 is safe; at 0.25 they stall against the wrist.
 
         config DRIVER_MOTOR_AXIS5_ENCODER_SLOTS
             int "Encoder wheel slots"
@@ -1078,12 +1080,13 @@ menu "Axes"
 
     config DRIVER_ALTITUDE_B_ENABLE
         bool "Drive altitude with a second motor (ER-4pc wrist pitch)"
-        default n
+        default y
         help
-            The ER-4pc wrist is a bevel gear differential: the wrist pitches
-            only when motors 4 and 5 turn in opposite directions, and one
-            motor alone rolls it. When enabled, altitude commands drive both
-            wrist motors, and if either one stops the other stops too.
+            The ER-4pc wrist is a bevel gear differential: driving both wrist
+            motors together pitches it, and one motor alone pitches and rolls
+            it at once. When enabled, altitude commands drive both wrist
+            motors at the altitude motor's speed, and if either one stops the
+            other stops too.
 
     choice DRIVER_ALTITUDE_B_MOTOR_SEL
         prompt "Second altitude motor"
@@ -1116,12 +1119,12 @@ menu "Axes"
     config DRIVER_ALTITUDE_B_REVERSED
         bool "Drive the second altitude motor opposite to the first"
         depends on DRIVER_ALTITUDE_B_ENABLE
-        default y
+        default n
         help
-            Pitch on the ER-4pc wrist needs the two motors turning in
-            opposite directions. If a tilt command rolls the wrist on the
-            bench instead, the motors are wired the other way around: change
-            this.
+            Off for Bluey: with its wiring, both wrist motors driven the same
+            direction pitch the wrist, and opposite directions roll it
+            (bench test, Nov 13 2026). If a tilt command rolls the wrist
+            instead, the motors are wired the other way around: change this.
 
 endmenu
 

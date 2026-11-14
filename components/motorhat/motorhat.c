@@ -104,6 +104,7 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
   }
   int num_motors = config->num_hats * MOTORHAT_MOTORS_PER_HAT;
 
+  // ALTITUDE_B is the last axis, so leaving it out just shortens the axis loops
   int num_axes = config->altitude_b_enabled ? MOTORHAT_NUM_AXES
                                           : MOTORHAT_AXIS_ALTITUDE_B;
   // Each axis needs its own valid port, or two axes would fight over one motor
