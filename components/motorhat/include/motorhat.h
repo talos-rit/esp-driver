@@ -11,14 +11,27 @@
 
 #define DEFAULT_FREQUENCY_HZ 1526.0f
 
+/** Motor ports on one HAT (M1-M4) */
+#define MOTORHAT_MOTORS_PER_HAT 4
+
+/** Most HATs that can be stacked on the bus. HAT n drives MOTOR(4n+1) to MOTOR(4n+4) */
+#define MOTORHAT_MAX_HATS 2
+
 /**
  * @brief Motor enumeration
+ *
+ * MOTOR1-MOTOR4 are M1-M4 on the first HAT, MOTOR5-MOTOR8 are M1-M4 on the
+ * second HAT. Ports on a HAT that is not configured are invalid.
  */
 typedef enum {
   MOTORHAT_MOTOR1 = 0,
   MOTORHAT_MOTOR2,
   MOTORHAT_MOTOR3,
   MOTORHAT_MOTOR4,
+  MOTORHAT_MOTOR5,
+  MOTORHAT_MOTOR6,
+  MOTORHAT_MOTOR7,
+  MOTORHAT_MOTOR8,
   MOTORHAT_NUM_MOTORS
 } motorhat_motor_t;
 
@@ -31,6 +44,9 @@ typedef enum {
   MOTORHAT_AXIS_ALTITUDE_B, /**< Optional second altitude motor, must stay last */
   MOTORHAT_NUM_AXES
 } motorhat_axis_t;
+
+/** Axes driven, counted from MOTORHAT_AXIS_AZIMUTH. One axis demo: azimuth only */
+#define MOTORHAT_NUM_ACTIVE_AXES 1
 
 /**
  * @brief Soft limit bounds for one axis in raw encoder counts
@@ -86,13 +102,15 @@ typedef struct {
  * @brief Motor HAT configuration structure
  */
 typedef struct {
-  pca9685_config_t pca9685_config;
+  pca9685_config_t pca9685_config[MOTORHAT_MAX_HATS]; /**< One per HAT, in motor port order */
+  int num_hats; /**< HATs on the bus, 1 to MOTORHAT_MAX_HATS */
   uint16_t polar_pan_speed; /**< Speed to use for polar pan movements */
   motorhat_encoder_cb_t encoder_cb; /**< Clear encoder count function callback */
   void* encoder_ctx; /** < Clear encoder count callback context (the encoder handle) */
   gpio_num_t limit_gpio; /**< GPIO number for limit switch pin */
 
   bool soft_limits_enabled; /**< Enforce soft limits when true */
+  bool homing_enabled; /**< Allow homing command when true */
   motorhat_soft_limit_t soft_limits[MOTORHAT_NUM_AXES]; /**< Per axis bounds indexed by motorhat_axis_t */
   motorhat_axis_count_cb_t axis_count_cb; /**< Reads an axis's encoder count, required when soft_limits_enabled */
   void* axis_count_ctx; /**< Context passed to axis_count_cb */
@@ -109,13 +127,16 @@ typedef struct {
  * @brief Motor HAT device handle
  */
 typedef struct {
-  pca9685_handle_t pca9685; /**< Handle for the underlying PCA9685 controller */
+  pca9685_handle_t pca9685[MOTORHAT_MAX_HATS]; /**< PCA9685 of each HAT */
+  int num_hats; /**< HATs initialized */
+  int num_motors; /**< Valid motor ports, num_hats * MOTORHAT_MOTORS_PER_HAT */
   uint16_t polar_pan_speed; /**< Speed to use for polar pan movements */
   motorhat_encoder_cb_t encoder_cb; /**< Clear encoder count function callback */
   void* encoder_ctx; /** < Clear encoder count callback context (the encoder handle) */
   gpio_num_t limit_gpio; /**< GPIO number for limit switch pin */
 
   bool soft_limits_enabled; /**< Enforce soft limits when true */
+  bool homing_enabled; /**< Allow homing command when true */
   motorhat_soft_limit_t soft_limits[MOTORHAT_NUM_AXES]; /**< Per axis bounds indexed by motorhat_axis_t */
   motorhat_axis_count_cb_t axis_count_cb; /**< Reads an axis's encoder count, required when soft_limits_enabled */
   void* axis_count_ctx; /**< Context passed to axis_count_cb */
@@ -129,15 +150,16 @@ typedef struct {
 } motorhat_handle_t;
 
 /**
- * @brief Channel assignments for each motor on the Adafruit Motor HAT
+ * @brief Channel assignments for each port (M1-M4) on one Adafruit Motor HAT
  *
+ * Every HAT uses the same channels; the motor number picks the HAT.
  * This mapping is specific to the Adafruit Motor HAT v2 pinout:
  * - Motor 1: IN1=CH10, IN2=CH9,  PWM=CH8
  * - Motor 2: IN1=CH11, IN2=CH12, PWM=CH13
  * - Motor 3: IN1=CH4,  IN2=CH3,  PWM=CH2
  * - Motor 4: IN1=CH5,  IN2=CH6,  PWM=CH7
  */
-static const motorhat_motor_channels_t motor_channels[MOTORHAT_NUM_MOTORS] = {
+static const motorhat_motor_channels_t motor_channels[MOTORHAT_MOTORS_PER_HAT] = {
     {PCA9685_CHANNEL10, PCA9685_CHANNEL9, PCA9685_CHANNEL8},    // Motor 1
     {PCA9685_CHANNEL11, PCA9685_CHANNEL12, PCA9685_CHANNEL13},  // Motor 2
     {PCA9685_CHANNEL4, PCA9685_CHANNEL3, PCA9685_CHANNEL2},     // Motor 3
@@ -160,8 +182,8 @@ static const motorhat_motor_channels_t motor_channels[MOTORHAT_NUM_MOTORS] = {
  *    - ESP_ERR_INVALID_ARG: Invalid argument (NULL pointer)
  *    - ESP_ERR_*: Other ESP-IDF error codes from PCA9685 initialization
  *
- * @note The handle->pca9685 pointer must be allocated and point to a valid
- *       pca9685_handle_t structure before calling this function
+ * @note config->num_hats PCA9685s are initialized; boot fails if any of them
+ *       does not answer, so a missing second HAT is caught at startup
  */
 esp_err_t motorhat_init(motorhat_handle_t* handle,
                         const motorhat_config_t* config);
@@ -249,7 +271,7 @@ esp_err_t motorhat_home(uint16_t delay_ms);
  * direction - use motorhat_set_motor_direction() to control direction.
  *
  * @param[in] handle Pointer to Motor HAT handle
- * @param[in] motor Motor identifier (MOTORHAT_MOTOR1 through MOTORHAT_MOTOR4)
+ * @param[in] motor Motor identifier (MOTORHAT_MOTOR1 through MOTORHAT_MOTOR8, ports on a missing HAT are invalid)
  * @param[in] speed Speed value (0-4096, where 0=stopped, 4096=full speed)
  *
  * @return
@@ -276,7 +298,7 @@ esp_err_t motorhat_set_motor_speed(motorhat_handle_t* handle,
  * - RELEASE: IN1=LOW, IN2=LOW (coasting/free-running)
  *
  * @param[in] handle Pointer to Motor HAT handle
- * @param[in] motor Motor identifier (MOTORHAT_MOTOR1 through MOTORHAT_MOTOR4)
+ * @param[in] motor Motor identifier (MOTORHAT_MOTOR1 through MOTORHAT_MOTOR8, ports on a missing HAT are invalid)
  * @param[in] direction Desired direction/state
  *
  * @return
