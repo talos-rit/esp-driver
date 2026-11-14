@@ -13,9 +13,11 @@
 #include "freertos/FreeRTOS.h"
 #include "i2c_bus.h"
 #include "limit_switch.h"
+#include "motor_config.h"
 #include "motorhat.h"
 #include "nvs_flash.h"
 #include "pca9685.h"
+#include "pi_link.h"
 #include "signal_bus.h"
 
 #define TAG "MAIN"
@@ -24,12 +26,15 @@
 #define ENCODER_STANDARD_RESOLUTION 20
 #define POLAR_PAN_SPEED
 
+#ifdef CONFIG_DRIVER_LINK_WIFI
+// Only the Wi-Fi socket uses this; -Werror rejects it unused in Pi mode
 static const driver_socket_api_motor_interface_t motor_interface = {
     .polar_pan = motorhat_polar_pan,
     .polar_pan_start = motorhat_polar_pan_start,
     .polar_pan_stop = motorhat_polar_pan_stop,
     .home = motorhat_home,
 };
+#endif
 
 typedef struct {
   encoder_handle_t* encoders;
@@ -119,7 +124,252 @@ static esp_err_t compute_soft_limit(const soft_limit_axis_params_t* params,
   return ESP_OK;
 }
 
+// One configured motor from menuconfig's Motors menu
+typedef struct {
+  const char* name;
+  motorhat_motor_t port;  // MOTORHAT_MOTOR1-8 = HAT 1 M1 ... HAT 2 M4
+  gpio_num_t encoder_a;
+  gpio_num_t encoder_b;
+  const char* speed;  // fraction of full PWM, as text
+  soft_limit_axis_params_t limits;
+  bool forward_increases_count;
+} motor_setting_t;
+
+#define MOTOR_SETTING(ID, SYM, NAME)                                    \
+  [ID] = {                                                              \
+      .name = NAME,                                                     \
+      .port = MOTOR_CONFIG_PORT_INDEX(SYM),                             \
+      .encoder_a = CONFIG_DRIVER_MOTOR_##SYM##_ENCODER_A_PIN,           \
+      .encoder_b = CONFIG_DRIVER_MOTOR_##SYM##_ENCODER_B_PIN,           \
+      .speed = CONFIG_DRIVER_MOTOR_##SYM##_SPEED,                       \
+      .limits =                                                         \
+          {                                                             \
+              .name = NAME,                                             \
+              .encoder_slots = CONFIG_DRIVER_MOTOR_##SYM##_ENCODER_SLOTS, \
+              .gearbox_ratio = CONFIG_DRIVER_MOTOR_##SYM##_GEARBOX_RATIO, \
+              .pinion_teeth = CONFIG_DRIVER_MOTOR_##SYM##_PINION_TEETH, \
+              .driven_teeth = CONFIG_DRIVER_MOTOR_##SYM##_DRIVEN_TEETH, \
+              .range_pos_deg = CONFIG_DRIVER_MOTOR_##SYM##_RANGE_POS_DEG, \
+              .range_neg_deg = CONFIG_DRIVER_MOTOR_##SYM##_RANGE_NEG_DEG, \
+          },                                                            \
+      .forward_increases_count = CONFIG_DRIVER_MOTOR_##SYM##_FWD_INCREASES, \
+  },
+
+// Indexed by motor ID; [0] is "no motor"
+static const motor_setting_t motor_settings[MOTOR_CONFIG_COUNT + 1] = {
+    MOTOR_CONFIG_LIST(MOTOR_SETTING)};
+
+static int motor_hat_num(int id) {
+  return motor_settings[id].port / MOTORHAT_MOTORS_PER_HAT + 1;
+}
+static int motor_hat_port(int id) {
+  return motor_settings[id].port % MOTORHAT_MOTORS_PER_HAT + 1;
+}
+
+// The motor picked for each role in the Axes menu
+#ifdef CONFIG_DRIVER_ALTITUDE_B_ENABLE
+#define NUM_ROLES 3
+#else
+#define NUM_ROLES 2
+#endif
+static const int role_motor_id[MOTORHAT_NUM_AXES] = {
+    [MOTORHAT_AXIS_AZIMUTH] = CONFIG_DRIVER_AZIMUTH_MOTOR_ID,
+    [MOTORHAT_AXIS_ALTITUDE] = CONFIG_DRIVER_ALTITUDE_MOTOR_ID,
+#ifdef CONFIG_DRIVER_ALTITUDE_B_ENABLE
+    [MOTORHAT_AXIS_ALTITUDE_B] = CONFIG_DRIVER_ALTITUDE_B_MOTOR_ID,
+#endif
+};
+static const char* const role_name[MOTORHAT_NUM_AXES] = {
+    [MOTORHAT_AXIS_AZIMUTH] = "azimuth",
+    [MOTORHAT_AXIS_ALTITUDE] = "altitude",
+    [MOTORHAT_AXIS_ALTITUDE_B] = "altitude B",
+};
+
+#ifdef CONFIG_DRIVER_CURRENT_SENSING_ENABLE
+typedef struct {
+  uint8_t addr;           // 0 ends the list
+  gpio_num_t rdy;
+  uint8_t pair_motor[2];  // A0-A1, A2-A3; motor ID, 0 = none
+} adc_setting_t;
+
+// Every ADC enabled in menuconfig (Talos ESP Driver Configuration)
+static const adc_setting_t adc_settings[] = {
+#ifdef CONFIG_DRIVER_ADC1_ENABLE
+    {CONFIG_DRIVER_ADC1_ADDRESS, CONFIG_DRIVER_ADC1_RDY_PIN,
+     {CONFIG_DRIVER_ADC1_PAIR_A_MOTOR_ID, CONFIG_DRIVER_ADC1_PAIR_B_MOTOR_ID}},
+#endif
+#ifdef CONFIG_DRIVER_ADC2_ENABLE
+    {CONFIG_DRIVER_ADC2_ADDRESS, CONFIG_DRIVER_ADC2_RDY_PIN,
+     {CONFIG_DRIVER_ADC2_PAIR_A_MOTOR_ID, CONFIG_DRIVER_ADC2_PAIR_B_MOTOR_ID}},
+#endif
+#ifdef CONFIG_DRIVER_ADC3_ENABLE
+    {CONFIG_DRIVER_ADC3_ADDRESS, CONFIG_DRIVER_ADC3_RDY_PIN,
+     {CONFIG_DRIVER_ADC3_PAIR_A_MOTOR_ID, CONFIG_DRIVER_ADC3_PAIR_B_MOTOR_ID}},
+#endif
+#ifdef CONFIG_DRIVER_ADC4_ENABLE
+    {CONFIG_DRIVER_ADC4_ADDRESS, CONFIG_DRIVER_ADC4_RDY_PIN,
+     {CONFIG_DRIVER_ADC4_PAIR_A_MOTOR_ID, CONFIG_DRIVER_ADC4_PAIR_B_MOTOR_ID}},
+#endif
+    {0},
+};
+#define MAX_ADCS 4
+
+// Their tasks and RDY interrupts use these for as long as the firmware runs
+static ads1015_handle_t adcs[MAX_ADCS];
+
+// Motor port (1-8) the ADS1015 driver gets for a motor ID; 0 = not watched
+static uint8_t adc_pair_port(int id) {
+  return id == 0 ? 0 : motor_settings[id].port + 1;
+}
+#endif
+
+// Two motors in use (roles and watched ADC pairs) must sit on different
+// ports, and two roles must not share a motor or encoder pins. With the
+// second HAT off, menuconfig clamps HAT 2 motors onto HAT 1, which lands them
+// on another motor's port: this catches that too. Stops the boot on a clash.
+static void check_motor_settings(void) {
+  bool used[MOTOR_CONFIG_COUNT + 1] = {false};
+  bool ok = true;
+
+  for (int r = 0; r < NUM_ROLES; r++) {
+    int id = role_motor_id[r];
+    used[id] = true;
+    for (int other = 0; other < r; other++) {
+      const motor_setting_t* a = &motor_settings[role_motor_id[other]];
+      const motor_setting_t* b = &motor_settings[id];
+      if (role_motor_id[other] == id) {
+        ESP_LOGE(TAG, "Roles %s and %s both use %s", role_name[other],
+                 role_name[r], b->name);
+        ok = false;
+      } else if (a->encoder_a == b->encoder_a || a->encoder_a == b->encoder_b ||
+                 a->encoder_b == b->encoder_a || a->encoder_b == b->encoder_b) {
+        ESP_LOGE(TAG, "%s and %s share an encoder GPIO", a->name, b->name);
+        ok = false;
+      }
+    }
+  }
+#ifdef CONFIG_DRIVER_CURRENT_SENSING_ENABLE
+  for (int i = 0; adc_settings[i].addr != 0; i++) {
+    used[adc_settings[i].pair_motor[0]] = true;
+    used[adc_settings[i].pair_motor[1]] = true;
+  }
+#endif
+  used[0] = false;
+
+  for (int i = 1; i <= MOTOR_CONFIG_COUNT; i++) {
+    for (int j = 1; j < i; j++) {
+      if (used[i] && used[j] &&
+          motor_settings[i].port == motor_settings[j].port) {
+        ESP_LOGE(TAG, "%s and %s are both set to HAT %d M%d",
+                 motor_settings[j].name, motor_settings[i].name,
+                 motor_hat_num(i), motor_hat_port(i));
+        ok = false;
+      }
+    }
+  }
+  if (!ok) {
+    ESP_LOGE(TAG, "Motor settings clash, fix them in menuconfig (Motors, Axes)");
+    ESP_ERROR_CHECK(ESP_ERR_INVALID_ARG);
+  }
+  for (int r = 0; r < NUM_ROLES; r++) {
+    int id = role_motor_id[r];
+    ESP_LOGI(TAG, "Role %s: %s on HAT %d M%d, encoder GPIO%d/%d",
+             role_name[r], motor_settings[id].name, motor_hat_num(id),
+             motor_hat_port(id), motor_settings[id].encoder_a,
+             motor_settings[id].encoder_b);
+  }
+}
+
+#ifdef CONFIG_DRIVER_CURRENT_SENSING_ENABLE
+// Checks the menuconfig settings, then starts every enabled ADC. Any mistake
+// stops the boot: a wrong setting would leave a motor without overcurrent
+// protection while looking fine.
+static void current_sensing_init(i2c_master_bus_handle_t bus, int num_motors) {
+  int count = 0;
+  bool watched[CURRENT_NUM_BITS + 1] = {false};  // by port 1-8
+  bool ok = true;
+
+  for (int i = 0; adc_settings[i].addr != 0; i++) {
+    const adc_setting_t* a = &adc_settings[i];
+    count++;
+    for (int j = 0; j < i; j++) {
+      if (adc_settings[j].addr == a->addr) {
+        ESP_LOGE(TAG, "Two ADCs at address 0x%02X", a->addr);
+        ok = false;
+      }
+      if (adc_settings[j].rdy == a->rdy) {
+        ESP_LOGE(TAG, "ADCs 0x%02X and 0x%02X share RDY GPIO%d", adc_settings[j].addr, a->addr, a->rdy);
+        ok = false;
+      }
+    }
+    if (a->rdy == CONFIG_DRIVER_MOTORHAT_SDA_PIN || a->rdy == CONFIG_DRIVER_MOTORHAT_SCL_PIN ||
+        a->rdy == CONFIG_DRIVER_LIMIT_SWITCH_PIN) {
+      ESP_LOGE(TAG, "ADC 0x%02X RDY GPIO%d is already the I2C or limit switch pin", a->addr, a->rdy);
+      ok = false;
+    }
+    for (int p = 0; p < 2; p++) {
+      int id = a->pair_motor[p];
+      if (id == 0) continue;
+      int port = adc_pair_port(id);
+      if (port > num_motors) {
+        ESP_LOGE(TAG, "ADC 0x%02X %s watches %s on HAT %d, but that HAT is off (Second MotorHAT)", a->addr,
+                 p == 0 ? "A0-A1" : "A2-A3", motor_settings[id].name, motor_hat_num(id));
+        ok = false;
+      } else if (watched[port]) {
+        ESP_LOGE(TAG, "%s is watched by two ADC pairs", motor_settings[id].name);
+        ok = false;
+      }
+      watched[port] = true;
+    }
+  }
+  if (!ok) {
+    ESP_LOGE(TAG, "Current sensing settings are wrong, fix them in menuconfig");
+    ESP_ERROR_CHECK(ESP_ERR_INVALID_ARG);
+  }
+  if (count == 0) {
+    ESP_LOGW(TAG, "Current sensing on but no ADC enabled, no overcurrent stop");
+    return;
+  }
+
+  for (int i = 0; i < count; i++) {
+    const adc_setting_t* a = &adc_settings[i];
+    ads1015_config_t cfg = {
+        .i2c_addr = a->addr,
+        .i2c_speed_hz = 400000,
+        .rdy_gpio = a->rdy,
+        .bus_handle = bus,
+        .adc_data_rate = CONFIG_DRIVER_ADS1015_DATA_RATE,
+        .pair_motor = {adc_pair_port(a->pair_motor[0]), adc_pair_port(a->pair_motor[1])},
+    };
+    esp_err_t err = ads1015_init(&adcs[i], &cfg);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "ADC 0x%02X did not start (%s). Check its power, SDA/SCL and ADDR pin.", a->addr,
+               esp_err_to_name(err));
+      ESP_ERROR_CHECK(err);
+    }
+  }
+
+  for (int id = 1; id <= MOTOR_CONFIG_COUNT; id++) {
+    if (!watched[motor_settings[id].port + 1]) {
+      ESP_LOGW(TAG, "%s (HAT %d M%d) has no current sensing", motor_settings[id].name, motor_hat_num(id),
+               motor_hat_port(id));
+    }
+  }
+  ESP_LOGI(TAG, "Current sensing: %d ADC(s) running", count);
+}
+#endif
+
+// 1 = run main/axis_check.c instead of the normal firmware: robot connected,
+// both HATs, motor supply on. Pulses each of the 6 axes briefly and reports
+// encoder movement. Set back to 0 for the normal firmware.
+#define AXIS_CHECK 0
+void axis_check(void);
+
 void app_main(void) {
+#if AXIS_CHECK
+  axis_check();  // never returns
+#endif
+
   // Initialize NVS
   esp_err_t ret = nvs_flash_init();
   if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
@@ -150,45 +400,26 @@ void app_main(void) {
   };
   ESP_ERROR_CHECK(limit_switch_init(&limit_switch_config));
 
-  // Initialize encoders
+  check_motor_settings();
+
+  // One encoder per role, from the motor picked for it (index = role)
   encoder_handle_t encoders[MOTORHAT_NUM_AXES];
-  encoder_config_t encoder_axis1_config = {
-      .P0_pin = CONFIG_DRIVER_AZIMUTH_ENCODER_A_PIN,
-      .P1_pin = CONFIG_DRIVER_AZIMUTH_ENCODER_B_PIN,
-      .resolution = CONFIG_ENCODER_0_RESOLUTION,
-      .glitch_filter_ns = CONFIG_ENCODER_GLITCH_FILTER,
-      .invert_angle = CONFIG_ENCODER_0_ANGLE_INVERT,
-  };
-  ESP_ERROR_CHECK(encoder_init(&encoders[0], &encoder_axis1_config));
-  ESP_ERROR_CHECK(encoder_start(&encoders[0]));
-
-  encoder_config_t encoder_axis2_config = {
-      .P0_pin = CONFIG_DRIVER_ALTITUDE_ENCODER_A_PIN,
-      .P1_pin = CONFIG_DRIVER_ALTITUDE_ENCODER_B_PIN,
-      .resolution = CONFIG_ENCODER_0_RESOLUTION,
-      .glitch_filter_ns = CONFIG_ENCODER_GLITCH_FILTER,
-      .invert_angle = CONFIG_ENCODER_0_ANGLE_INVERT,
-  };
-  ESP_ERROR_CHECK(encoder_init(&encoders[1], &encoder_axis2_config));
-  ESP_ERROR_CHECK(encoder_start(&encoders[1]));
-
-  int encoder_count = 2;
-#ifdef CONFIG_DRIVER_ALTITUDE_B_ENABLE
-  encoder_config_t encoder_axis3_config = {
-      .P0_pin = CONFIG_DRIVER_ALTITUDE_B_ENCODER_A_PIN,
-      .P1_pin = CONFIG_DRIVER_ALTITUDE_B_ENCODER_B_PIN,
-      .resolution = CONFIG_ENCODER_0_RESOLUTION,
-      .glitch_filter_ns = CONFIG_ENCODER_GLITCH_FILTER,
-      .invert_angle = CONFIG_ENCODER_0_ANGLE_INVERT,
-  };
-  ESP_ERROR_CHECK(encoder_init(&encoders[2], &encoder_axis3_config));
-  ESP_ERROR_CHECK(encoder_start(&encoders[2]));
-  encoder_count = 3;
-#endif
+  for (int r = 0; r < NUM_ROLES; r++) {
+    const motor_setting_t* m = &motor_settings[role_motor_id[r]];
+    encoder_config_t encoder_config = {
+        .P0_pin = m->encoder_a,
+        .P1_pin = m->encoder_b,
+        .resolution = CONFIG_ENCODER_0_RESOLUTION,
+        .glitch_filter_ns = CONFIG_ENCODER_GLITCH_FILTER,
+        .invert_angle = CONFIG_ENCODER_0_ANGLE_INVERT,
+    };
+    ESP_ERROR_CHECK(encoder_init(&encoders[r], &encoder_config));
+    ESP_ERROR_CHECK(encoder_start(&encoders[r]));
+  }
 
   encoder_array_t encoder_array = {
       .encoders = encoders,
-      .count = encoder_count,
+      .count = NUM_ROLES,
   };
 
   // Initialize motor controller
@@ -196,11 +427,26 @@ void app_main(void) {
   motorhat_config_t motorhat_config = {
       .pca9685_config =
           {
-              .i2c_addr = CONFIG_DRIVER_MOTORHAT_ADDRESS,
-              .i2c_speed_hz = 400000,
-              .pwm_freq_hz = DEFAULT_FREQUENCY_HZ,
-              .bus_handle = bus.handle,
+              {
+                  .i2c_addr = CONFIG_DRIVER_MOTORHAT_ADDRESS,
+                  .i2c_speed_hz = 400000,
+                  .pwm_freq_hz = DEFAULT_FREQUENCY_HZ,
+                  .bus_handle = bus.handle,
+              },
+#ifdef CONFIG_DRIVER_MOTORHAT2_ENABLE
+              {
+                  .i2c_addr = CONFIG_DRIVER_MOTORHAT2_ADDRESS,
+                  .i2c_speed_hz = 400000,
+                  .pwm_freq_hz = DEFAULT_FREQUENCY_HZ,
+                  .bus_handle = bus.handle,
+              },
+#endif
           },
+#ifdef CONFIG_DRIVER_MOTORHAT2_ENABLE
+      .num_hats = 2,
+#else
+      .num_hats = 1,
+#endif
       .polar_pan_speed =
           PCA9685_PWM_MAX * atof(CONFIG_DRIVER_MOTORHAT_PAN_SPEED),
       .encoder_cb = (motorhat_encoder_cb_t)clear_all_encoders,
@@ -210,82 +456,42 @@ void app_main(void) {
       .axis_count_cb = read_axis_count,
       .axis_count_ctx = &encoder_array,
       .max_run_ms = CONFIG_DRIVER_MAX_RUN_MS,
-      .axis_motor =
-          {
-              [MOTORHAT_AXIS_AZIMUTH] = CONFIG_DRIVER_AZIMUTH_MOTOR - 1,
-              [MOTORHAT_AXIS_ALTITUDE] = CONFIG_DRIVER_ALTITUDE_MOTOR - 1,
-          },
-      .axis_speed =
-          {
-              [MOTORHAT_AXIS_AZIMUTH] =
-                  PCA9685_PWM_MAX * atof(CONFIG_DRIVER_AZIMUTH_PAN_SPEED),
-              [MOTORHAT_AXIS_ALTITUDE] =
-                  PCA9685_PWM_MAX * atof(CONFIG_DRIVER_ALTITUDE_PAN_SPEED),
-              // The second wrist motor turns with the first, at the same speed
-              [MOTORHAT_AXIS_ALTITUDE_B] =
-                  PCA9685_PWM_MAX * atof(CONFIG_DRIVER_ALTITUDE_PAN_SPEED),
-          },
   };
 
+  for (int r = 0; r < NUM_ROLES; r++) {
+    const motor_setting_t* m = &motor_settings[role_motor_id[r]];
+    motorhat_config.axis_motor[r] = m->port;
+    motorhat_config.axis_speed[r] = PCA9685_PWM_MAX * atof(m->speed);
+  }
+
 #ifdef CONFIG_DRIVER_ALTITUDE_B_ENABLE
-  // ER-4pc wrist pitch: altitude drives both motors of the wrist differential
+  // ER-4pc wrist pitch: altitude drives both motors of the wrist differential.
+  // The second motor runs at the altitude motor's speed so the wrist pitches
+  // without rolling; its own speed setting is not used.
   motorhat_config.altitude_b_enabled = true;
-  motorhat_config.axis_motor[MOTORHAT_AXIS_ALTITUDE_B] =
-      CONFIG_DRIVER_ALTITUDE_B_MOTOR - 1;
+  motorhat_config.axis_speed[MOTORHAT_AXIS_ALTITUDE_B] =
+      motorhat_config.axis_speed[MOTORHAT_AXIS_ALTITUDE];
 #ifdef CONFIG_DRIVER_ALTITUDE_B_REVERSED
   motorhat_config.altitude_b_reversed = true;
 #endif
 #endif
 
-#ifdef CONFIG_DRIVER_SOFT_LIMITS_ENABLE
-  const soft_limit_axis_params_t soft_limit_params[MOTORHAT_NUM_AXES] = {
-      [MOTORHAT_AXIS_AZIMUTH] =
-          {
-              .name = "azimuth",
-              .encoder_slots = CONFIG_DRIVER_SOFT_LIMITS_AZIMUTH_ENCODER_SLOTS,
-              .gearbox_ratio = CONFIG_DRIVER_SOFT_LIMITS_AZIMUTH_GEARBOX_RATIO,
-              .pinion_teeth = CONFIG_DRIVER_SOFT_LIMITS_AZIMUTH_PINION_TEETH,
-              .driven_teeth = CONFIG_DRIVER_SOFT_LIMITS_AZIMUTH_DRIVEN_TEETH,
-              .range_pos_deg = CONFIG_DRIVER_SOFT_LIMITS_AZIMUTH_RANGE_POS_DEG,
-              .range_neg_deg = CONFIG_DRIVER_SOFT_LIMITS_AZIMUTH_RANGE_NEG_DEG,
-          },
-      [MOTORHAT_AXIS_ALTITUDE] =
-          {
-              .name = "altitude",
-              .encoder_slots = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_ENCODER_SLOTS,
-              .gearbox_ratio = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_GEARBOX_RATIO,
-              .pinion_teeth = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_PINION_TEETH,
-              .driven_teeth = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_DRIVEN_TEETH,
-              .range_pos_deg = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_RANGE_POS_DEG,
-              .range_neg_deg = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_RANGE_NEG_DEG,
-          },
-      // The second altitude motor has the same gearing and travel
-      [MOTORHAT_AXIS_ALTITUDE_B] =
-          {
-              .name = "altitude B",
-              .encoder_slots = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_ENCODER_SLOTS,
-              .gearbox_ratio = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_GEARBOX_RATIO,
-              .pinion_teeth = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_PINION_TEETH,
-              .driven_teeth = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_DRIVEN_TEETH,
-              .range_pos_deg = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_RANGE_POS_DEG,
-              .range_neg_deg = CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_RANGE_NEG_DEG,
-          },
-
-  };
-
-  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
-    ESP_ERROR_CHECK(compute_soft_limit(&soft_limit_params[axis],
-                                       CONFIG_DRIVER_SOFT_LIMITS_PERCENT,
-                                       &motorhat_config.soft_limits[axis]));
-  }
-  motorhat_config.forward_increases_count[MOTORHAT_AXIS_AZIMUTH] =
-      CONFIG_DRIVER_SOFT_LIMITS_AZIMUTH_FWD_INCREASES;
-  motorhat_config.forward_increases_count[MOTORHAT_AXIS_ALTITUDE] =
-      CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_FWD_INCREASES;
-#ifdef CONFIG_DRIVER_ALTITUDE_B_ENABLE
-  motorhat_config.forward_increases_count[MOTORHAT_AXIS_ALTITUDE_B] =
-      CONFIG_DRIVER_SOFT_LIMITS_ALTITUDE_B_FWD_INCREASES;
+#ifdef CONFIG_DRIVER_HOMING_ENABLE
+  motorhat_config.homing_enabled = true;
+#else
+  ESP_LOGW(TAG, "Homing disabled, home command will be rejected");
 #endif
+
+#ifdef CONFIG_DRIVER_SOFT_LIMITS_ENABLE
+  // Each role takes the gearing, travel and direction of the motor picked
+  // for it
+  for (int r = 0; r < NUM_ROLES; r++) {
+    const motor_setting_t* m = &motor_settings[role_motor_id[r]];
+    ESP_ERROR_CHECK(compute_soft_limit(&m->limits,
+                                       CONFIG_DRIVER_SOFT_LIMITS_PERCENT,
+                                       &motorhat_config.soft_limits[r]));
+    motorhat_config.forward_increases_count[r] = m->forward_increases_count;
+  }
   motorhat_config.soft_limit_poll_ms = CONFIG_DRIVER_SOFT_LIMITS_POLL_MS;
   motorhat_config.soft_limits_enabled = true;
 
@@ -295,17 +501,33 @@ void app_main(void) {
 
   ESP_ERROR_CHECK(motorhat_init(&motorhat, &motorhat_config));
 
-  // Initialize current sensing
-  ads1015_handle_t ads;
-  ads1015_config_t ads_config = {
-      .i2c_addr = CONFIG_DRIVER_ADS1015_ADDRESS,
-      .i2c_speed_hz = 400000,
-      .rdy_gpio = CONFIG_DRIVER_ADS1015_RDY_PIN,
-      .bus_handle = bus.handle,
-      .adc_data_rate = CONFIG_DRIVER_ADS1015_DATA_RATE,
-  };
-  ESP_ERROR_CHECK(ads1015_init(&ads, &ads_config));
+#ifdef CONFIG_DRIVER_CURRENT_SENSING_ENABLE
+  // Started after the HATs so an overcurrent at once has motors to stop
+  current_sensing_init(bus.handle, motorhat.num_motors);
+#else
+  ESP_LOGW(TAG, "Current sensing disabled, no overcurrent stop");
+#endif
 
+#ifdef CONFIG_DRIVER_LINK_PI_SERIAL
+#if CONFIG_ESP_CONSOLE_UART_NUM == 0
+#error "Pi serial link owns UART0: set console output to None or UART1"
+#endif
+  // Take commands from the Pi's operator over USB serial
+  pi_link_config_t pi_link_config = {
+      .baud_rate = CONFIG_DRIVER_PI_SERIAL_BAUD,
+      .debug_reply = false,
+      .motor =
+          {
+              .polar_pan_start = motorhat_polar_pan_start,
+              .polar_pan_stop = motorhat_polar_pan_stop,
+              .home = motorhat_home,
+          },
+  };
+#ifdef CONFIG_DRIVER_PI_SERIAL_DEBUG_REPLY
+  pi_link_config.debug_reply = true;
+#endif
+  ESP_ERROR_CHECK(pi_link_init(&pi_link_config));
+#else
   // Initialize Wi-Fi and socket connection
   driver_wifi_config_t wifi_config = {
       .ssid = CONFIG_DRIVER_WIFI_SSID,
@@ -324,22 +546,31 @@ void app_main(void) {
 
   ESP_ERROR_CHECK(
       driver_socket_init(&socket_handle, &socket_config, &motor_interface));
+#endif
 
   // Track encoder values
-  int axis1_count;
-  int axis2_count;
+  int azimuth_count;
+  const char* azimuth_name =
+      motor_settings[role_motor_id[MOTORHAT_AXIS_AZIMUTH]].name;
 
   while (1) {
-    esp_err_t err = encoder_get_raw_count(&encoders[0], &axis1_count);
+    esp_err_t err = encoder_get_raw_count(&encoders[MOTORHAT_AXIS_AZIMUTH],
+                                          &azimuth_count);
     if (err != ESP_OK) {
       ESP_LOGE(TAG, "Failed to get encoder count: %s", esp_err_to_name(err));
     }
-    err = encoder_get_raw_count(&encoders[1], &axis2_count);
-    if (err != ESP_OK) {
-      ESP_LOGE(TAG, "Failed to get encoder count: %s", esp_err_to_name(err));
-    }
-    ESP_LOGI(TAG, "Axis 1 count: %i       Axis 2 count: %i", axis1_count,
-             axis2_count);
+    ESP_LOGI(TAG, "Azimuth (%s) count: %i", azimuth_name, azimuth_count);
+    int altitude_count = 0;
+    encoder_get_raw_count(&encoders[MOTORHAT_AXIS_ALTITUDE], &altitude_count);
+#ifdef CONFIG_DRIVER_ALTITUDE_B_ENABLE
+    int altitude_b_count = 0;
+    encoder_get_raw_count(&encoders[MOTORHAT_AXIS_ALTITUDE_B],
+                          &altitude_b_count);
+    ESP_LOGI(TAG, "Altitude count: %i   Altitude B count: %i", altitude_count,
+             altitude_b_count);
+#else
+    ESP_LOGI(TAG, "Altitude count: %i", altitude_count);
+#endif
 
     vTaskDelay(pdMS_TO_TICKS(500));  // Avoid busy loop
 
