@@ -15,7 +15,6 @@
 
 #define PI_LINK_UART UART_NUM_0
 #define PI_LINK_RX_BUFFER_SIZE 256  // Driver needs more than the 128 byte FIFO
-#define PI_LINK_LINE_MAX 64         // ACL_CMD_SIZE in operator acl.hpp
 #define PI_LINK_READ_TIMEOUT_MS 10  // erv sends manual keys every 10 ms
 // Stop if erv's key repeat stops. A plain jog repeats every 10 ms, a tracking
 // jog (TrackingJog in operator api.hpp) every interval_ms, a uint8_t, so 255 ms
@@ -23,7 +22,7 @@
 #define PI_LINK_KEY_TIMEOUT_MS 300
 #define PI_LINK_RESTART_MS 250  // Repeat start below CONFIG_DRIVER_MAX_RUN_MS
 #define PI_LINK_CMD_MAX 63  // Longest command the spec allows, \r not counted
-#define PI_LINK_LINE_MAX (PI_LINK_CMD_MAX + 1)  // + NUL
+#define PI_LINK_LINE_MAX (PI_LINK_CMD_MAX + 1)  // + NUL, ACL_CMD_SIZE in operator acl.hpp
 
 #define PI_LINK_REPLY_PREFIX_MAX (sizeof("ESP ERROR UNSUPPORTED ") - 1) // The longest prefix the Pi expects before a command's reply, not counting the command itself
 #define PI_LINK_REPLY_MAX (PI_LINK_REPLY_PREFIX_MAX + PI_LINK_CMD_MAX + 2 + 1)  // + \r\n + NUL
@@ -57,7 +56,7 @@ static void send_line(const char* format, ...) {
   // Fill buffer like printf but leave 2 spaces for \r\n
   va_list args;
   va_start(args, format);
-  vnsprintf(buf, sizeof(buf)-2, format, args);
+  vsnprintf(buf, sizeof(buf)-2, format, args);
   va_end(args);
 
   // Add line endings 
