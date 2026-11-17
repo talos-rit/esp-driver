@@ -197,14 +197,58 @@ static bool start_homing(void) {
   return s_homing;
 }
 
+// SPEED n: sets the jog speed to n percent of the menuconfig speed. Only
+// changes the speed, never starts motion
+static void handle_speed(const char* args) {
+  // skip the space between SPEED and the number
+  while (*args == ' ') {
+    args++;
+  }
+
+  // Nothing after SPEED
+  if (*args == '\0') {
+    send_line("ESP ERROR BAD_ARGUMENT SPEED");
+    return;
+  }
+
+  int percent = 0;
+  for (int i = 0; args[i] != '\0'; i++) {
+    // Anything except a digit is an error
+    if (!isdigit((unsigned char)args[i])) {
+      send_line("ESP ERROR BAD_ARGUMENT SPEED");
+      return;
+    }
+    percent = percent * 10 + (args[i] - '0'); // args[i] - '0' converts char to int
+
+    // Stop if percent is out of range so digits cant overflow percent
+    if (percent > 100) {
+      send_line("ESP ERROR BAD_ARGUMENT SPEED");
+      return;
+    }
+  }
+
+  if (percent < 1) {
+    send_line("ESP ERROR BAD_ARGUMENT SPEED");
+    return;
+  }
+
+  // Only send OK if it was really set
+  if (s_config.motor.set_speed_percent(percent) != ESP_OK) {
+    send_line("ESP ERROR BAD_ARGUMENT SPEED");
+    return;
+  }
+
+  send_line("ESP OK SPEED %d", percent);
+}
+
 // Returns true when the prompt should be sent now
 static bool handle_line(const char* line) {
   char text[PI_LINK_LINE_MAX + 16];
   snprintf(text, sizeof(text), "line [%s]\r\n", line);
   reply(text);
 
-  // Exact matches only. Anything else (HERE, DEFP, SHIFT, MOVE, LISTPV, CON,
-  // SPEED) only gets a prompt until relative moves exist (motorhat_polar_pan is a TODO)
+  // Exact matches only. Anything else (HERE, DEFP, SHIFT, MOVE, LISTPV, CON)
+  // only gets a prompt until relative moves exist (motorhat_polar_pan is a TODO)
   if (strcmp(line, "HOME") == 0) {
     return !start_homing();
   } else if (strcmp(line, "clrbuf") == 0) {
@@ -213,6 +257,9 @@ static bool handle_line(const char* line) {
     // Same stop as clrbuf, homing included, but STOP always answers
     stop_motion();
     send_line("ESP OK STOP");
+  } else if (strcmp(line, "SPEED") == 0 || strncmp(line, "SPEED ", 6) == 0) {
+    // line + 5 is everything after the word SPEED
+    handle_speed(line + 5);
   }
   return true;
 }
@@ -293,7 +340,7 @@ static void pi_link_task(void* arg) {
 esp_err_t pi_link_init(const pi_link_config_t* config) {
   if (!config || !config->motor.polar_pan_start ||
       !config->motor.polar_pan_stop || !config->motor.home ||
-      !config->motor.home_cancel) {
+      !config->motor.home_cancel || !config->motor.set_speed_percent) {
     return ESP_ERR_INVALID_ARG;
   }
   s_config = *config;

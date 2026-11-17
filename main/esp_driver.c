@@ -630,6 +630,7 @@ void app_main(void) {
               .polar_pan_stop = motorhat_polar_pan_stop,
               .home = motorhat_home,
               .home_cancel = motorhat_home_cancel,
+              .set_speed_percent = motorhat_set_speed_percent,
           },
   };
 #ifdef CONFIG_DRIVER_PI_SERIAL_DEBUG_REPLY

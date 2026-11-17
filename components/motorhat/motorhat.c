@@ -184,6 +184,7 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
         config->forward_increases_count[axis];
     handle->axis_motor[axis] = config->axis_motor[axis];
     handle->axis_speed[axis] = config->axis_speed[axis];
+    handle->axis_speed_max[axis] = config->axis_speed[axis];
   }
   handle->soft_limit_poll_ms = config->soft_limit_poll_ms;
   handle->max_run_ms = config->max_run_ms;
@@ -666,6 +667,37 @@ esp_err_t motorhat_polar_pan_stop(void) {
     s_axis_direction[axis] = MOTORHAT_DIRECTION_BRAKE;
   }
   xSemaphoreGive(s_axis_lock);
+  return ESP_OK;
+}
+
+esp_err_t motorhat_set_speed_percent(uint8_t percent) {
+  if (s_handle == NULL) {
+    return ESP_ERR_INVALID_STATE;
+  }
+  if (percent < 1 || percent > 100) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  // Closed loop ignores axis_speed for jogging so scale the jog speed instead
+  if (s_handle->servo_enabled) {
+    motorhat_servo_set_speed_percent(percent);
+    ESP_LOGI(TAG, "Jog speed %d%%", percent);
+    return ESP_OK;
+  }
+
+  // start_axes reads axis_speed under this lock
+  xSemaphoreTake(s_axis_lock, portMAX_DELAY);
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+    // A percent of the configured speed, not of the last speed, so  result is at most axis_speed_max
+    s_handle->axis_speed[axis] = (uint32_t)s_handle->axis_speed_max[axis] * percent / 100;
+  }
+  xSemaphoreGive(s_axis_lock);
+
+  ESP_LOGI(TAG, "Pan speed %d%%", percent);
+  for (int axis = 0; axis < s_handle->num_axes; axis++) {
+    ESP_LOGI(TAG, "    axis %d: duty %d", axis, s_handle->axis_speed[axis]);
+  }
+
   return ESP_OK;
 }
 

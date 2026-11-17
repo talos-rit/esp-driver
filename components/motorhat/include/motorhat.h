@@ -160,7 +160,8 @@ typedef struct {
   motorhat_motor_t axis_motor[MOTORHAT_NUM_AXES]; /**< Motor HAT port driving each axis, indexed by motorhat_axis_t */
   bool altitude_b_reversed; /**< Drive ALTITUDE_B opposite to ALTITUDE (pitch on a differential wrist) */
   int num_axes; /**< Axes in use, MOTORHAT_NUM_AXES with ALTITUDE_B enabled and one fewer without */
-  uint16_t axis_speed[MOTORHAT_NUM_AXES]; /**< Polar pan PWM duty (0 to PCA9685_PWM_MAX) for each axis */
+  uint16_t axis_speed[MOTORHAT_NUM_AXES]; /**< Polar pan PWM duty (0 to PCA9685_PWM_MAX) for each axis, scaled by motorhat_set_speed_percent */
+  uint16_t axis_speed_max[MOTORHAT_NUM_AXES]; /**< The configured axis_speed, used at 100 percent */
   bool servo_enabled; /**< Polar pan goes to the closed loop (motorhat_servo.c) */
 } motorhat_handle_t;
 
@@ -251,6 +252,26 @@ esp_err_t motorhat_polar_pan_start(int8_t delta_azimuth, int8_t delta_altitude);
  * functions
  */
 esp_err_t motorhat_polar_pan_stop(void);
+
+/**
+ * @brief Set the jog speed as a percent of the speed set in menuconfig
+ *
+ * 100 is the menuconfig speed, so this can only slow jogging down, never go
+ * faster than what was set up as safe. Does not start any motion, and does
+ * not change the homing speed.
+ *
+ * Open loop: scales each axis's Pan speed (PWM duty), used from the next
+ * polar_pan_start. Closed loop: scales each joint's jog speed (counts/s),
+ * used at once. a jog in progress ramps to the new speed.
+ *
+ * @param[in] percent 1 to 100
+ *
+ * @return
+ *    - ESP_OK: Success
+ *    - ESP_ERR_INVALID_ARG: percent outside 1 to 100
+ *    - ESP_ERR_INVALID_STATE: motorhat_init hasnt run
+ */
+esp_err_t motorhat_set_speed_percent(uint8_t percent);
 
 /**
  * @brief Home command

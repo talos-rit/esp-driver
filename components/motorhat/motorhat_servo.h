@@ -30,4 +30,11 @@ void motorhat_servo_stop(void);
  */
 void motorhat_servo_halt(void);
 
+/**
+ * @brief Jog speed of both joints as a percent (1 to 100, checked by the
+ * caller) of the menuconfig jog speed. Used at once; a jog in progress ramps
+ * to the new speed.
+ */
+void motorhat_servo_set_speed_percent(uint8_t percent);
+
 #endif  // _MOTORHAT_SERVO_H_

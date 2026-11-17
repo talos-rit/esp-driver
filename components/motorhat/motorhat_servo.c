@@ -328,3 +328,15 @@ void motorhat_servo_halt(void) {
   halt_all();
   xSemaphoreGive(s_lock);
 }
+
+void motorhat_servo_set_speed_percent(uint8_t percent) {
+  if (s_lock == NULL) {
+    return;
+  }
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  for (int j = 0; j < NUM_JOINTS; j++) {
+    // s_cfg keeps the menuconfig speed; s_joint[j].p is what the loop uses
+    s_joint[j].p.jog_speed = s_cfg.joint[j].jog_speed * percent / 100.0f;
+  }
+  xSemaphoreGive(s_lock);
+}
