@@ -12,6 +12,14 @@
 
 #define DEFAULT_FREQUENCY_HZ 1526.0f
 
+/**
+ * Why motorhat_home failed, beside the standard ESP_ERR_* codes it also
+ * returns. The base is above every ESP-IDF error base, so no code clashes
+ */
+#define MOTORHAT_ERR_BASE 0x20000
+#define MOTORHAT_ERR_HOME_OVERCURRENT (MOTORHAT_ERR_BASE + 1) /**< Overcurrent while looking for the switch */
+#define MOTORHAT_ERR_HOME_LIMIT (MOTORHAT_ERR_BASE + 2) /**< Reached a soft limit without finding the switch */
+
 /** Motor ports on one HAT (M1-M4) */
 #define MOTORHAT_MOTORS_PER_HAT 4
 
@@ -294,10 +302,14 @@ esp_err_t motorhat_set_speed_percent(uint8_t percent);
  * @param[in] delay_ms Delay before starting the homing movement
  *
  * @return
- *    - ESP_OK: Success
- *    - ESP_ERR_NOT_FINISHED: Cancelled by motorhat_home_cancel, encoders not reset
- *    - ESP_ERR_*: Other ESP-IDF error codes propogated from motor control
- * functions
+ *    - ESP_OK: Success, encoders reset to 0
+ *    - ESP_ERR_NOT_FINISHED: Cancelled by motorhat_home_cancel
+ *    - MOTORHAT_ERR_HOME_OVERCURRENT: Overcurrent on the way back to the switch
+ *    - MOTORHAT_ERR_HOME_LIMIT: Reached a soft limit on the way back to the switch
+ *    - ESP_ERR_NOT_SUPPORTED: Homing disabled in menuconfig
+ *    - ESP_ERR_INVALID_STATE: Already homing, or motorhat_init has not run
+ *
+ * Every failure stops all motors and does not reset encoders
  */
 esp_err_t motorhat_home(uint16_t delay_ms);
 

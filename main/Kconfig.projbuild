@@ -522,9 +522,10 @@ menu "Talos ESP Driver Configuration"
             zeroed at the boot position. Separate from soft limits so homing
             can run with soft limits on.
 
-            Off by default: a homing run cannot yet be stopped by STOP, a
-            client disconnect or the Pi link, and has no timeout; only the
-            limit switch or the e-stop ends it.
+            Off by default: On the Pi link, clrbuf,
+            STOP and ~ cancel it; otherwise only the limit switch, a soft
+            limit, overcurrent or the e-stop ends it. A Wi-Fi client
+            disconnect does not stop it.
 
 endmenu
 

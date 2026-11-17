@@ -347,11 +347,15 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
         motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_RELEASE);
 
       } else {
-        ESP_LOGW(TAG, "Motor %d unexpected homing event detected", m);
+        // Overcurrent, or a soft limit (bits 0), before reaching the switch
+        ESP_LOGW(TAG, "Motor %d did not find the limit switch moving backward", m);
         motorhat_emergency_stop(s_handle);
         s_home_cancel = false;
         xEventGroupClearBits(g_motor_events, HOMING_FLAG);
-        return ESP_FAIL;
+        if (bits & CURRENT_ANY) {
+          return MOTORHAT_ERR_HOME_OVERCURRENT;
+        }
+        return MOTORHAT_ERR_HOME_LIMIT;
       }
 
     } else if (bits & LIMIT_ANY) {
@@ -381,8 +385,14 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
       motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_RELEASE);
 
     } else {
+      // Can't happen today: home_wait only returns 0, current bits or limit
+      // bits, and the branches above take all three. If it ever does, fail
+      // rather than fall through and zero the encoders away from home
       ESP_LOGW(TAG, "Motor %d unexpected homing event detected", m);
       motorhat_emergency_stop(s_handle);
+      s_home_cancel = false;
+      xEventGroupClearBits(g_motor_events, HOMING_FLAG);
+      return ESP_FAIL;
     }
   }
 

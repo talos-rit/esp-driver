@@ -10,6 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "soc/uart_pins.h"
+#include "motorhat.h"
 
 #define TAG "pi_link"
 
@@ -178,10 +179,26 @@ static void check_key_timeout(void) {
 // motorhat_home blocks until done, so it runs here to keep the link read
 static void home_task(void* arg) {
   esp_err_t err = s_config.motor.home(0);
-  reply(err == ESP_OK                 ? "home done\r\n"
-        : err == ESP_ERR_NOT_FINISHED ? "home cancelled\r\n"
-                                      : "home failed\r\n");
+
+  // Clear first, so a HOME the Pi sends as soon as it reads the result below
+  // isn't dropped as "already homing"
   s_homing = false;
+
+  // Send the spec's reply for how homing ended
+  if (err == ESP_OK) {
+    // motorhat_home zeroed the encoders at the home position
+    // this is just for the base (axis 0??) Might need to add for every axis that is homed.
+    send_line("ESP EVENT HOME_DONE BASE=0");
+  } else if (err == MOTORHAT_ERR_HOME_OVERCURRENT) {
+    send_line("ESP ERROR HOME OVERCURRENT");
+  } else if (err == MOTORHAT_ERR_HOME_LIMIT) {
+    send_line("ESP ERROR HOME LIMIT");
+  } else {
+    // Cancelled by clrbuf, STOP or ~ (ESP_ERR_NOT_FINISHED), homing turned
+    // off in menuconfig (ESP_ERR_NOT_SUPPORTED), or anything unexpected.
+    // None of them moved the arm to home
+    send_line("ESP ERROR HOME ESTOP");
+  }
   prompt();  // HOME's prompt comes when homing is over, as on the ER-V
   vTaskDelete(NULL);
 }
@@ -191,10 +208,18 @@ static bool start_homing(void) {
   if (s_homing) return true;
   stop_motion();
   s_homing = true;
+
+  // Signals homing started. Does not mean it is done homing. Sent before the
+  // task exists, so the task's HOME_DONE or ERROR can never come out first
+  // (homing turned off fails at once)
+  send_line("ESP OK HOME");
+
   if (xTaskCreate(home_task, "pi_link_home", 4096, NULL, 5, NULL) != pdPASS) {
     s_homing = false;
+    send_line("ESP ERROR HOME ESTOP");
+    return false;
   }
-  return s_homing;
+  return true;
 }
 
 // SPEED n: sets the jog speed to n percent of the menuconfig speed. Only
