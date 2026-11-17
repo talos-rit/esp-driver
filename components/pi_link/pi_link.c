@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include "driver/uart.h"
 #include "esp_log.h"
@@ -21,6 +22,11 @@
 // at most. erv stops with ~ itself, so this only catches a lost link
 #define PI_LINK_KEY_TIMEOUT_MS 300
 #define PI_LINK_RESTART_MS 250  // Repeat start below CONFIG_DRIVER_MAX_RUN_MS
+#define PI_LINK_CMD_MAX 63  // Longest command the spec allows, \r not counted
+#define PI_LINK_LINE_MAX (PI_LINK_CMD_MAX + 1)  // + NUL
+
+#define PI_LINK_REPLY_PREFIX_MAX (sizeof("ESP ERROR UNSUPPORTED ") - 1) // The longest prefix the Pi expects before a command's reply, not counting the command itself
+#define PI_LINK_REPLY_MAX (PI_LINK_REPLY_PREFIX_MAX + PI_LINK_CMD_MAX + 2 + 1)  // + \r\n + NUL
 
 #define ACL_MANUAL_TOGGLE '~'
 #define ACL_XON 0x11   // The Pi's tty uses XON/XOFF flow control (ixon ixoff)
@@ -41,6 +47,23 @@ static volatile bool s_homing = false;  // Cleared by home_task when done
 static void reply(const char* text) {
   if (!s_config.debug_reply) return;
   uart_write_bytes(PI_LINK_UART, text, strlen(text));
+}
+
+// Works like printf. Sends a reply line to the Pi with \r\n. The whole line is sent in one
+// write so a reply from another task can't get mixed into the middle of a reply from another.
+static void send_line(const char* format, ...) {
+  char buf[PI_LINK_REPLY_MAX];
+
+  // Fill buffer like printf but leave 2 spaces for \r\n
+  va_list args;
+  va_start(args, format);
+  vnsprintf(buf, sizeof(buf)-2, format, args);
+  va_end(args);
+
+  // Add line endings 
+  strcat(buf, "\r\n");
+
+  uart_write_bytes(PI_LINK_UART, buf, strlen(buf));
 }
 
 // erv sends its next queued command, and enters manual mode, only after the
@@ -187,6 +210,10 @@ static bool handle_line(const char* line) {
     return !start_homing();
   } else if (strcmp(line, "clrbuf") == 0) {
     stop_motion();
+  } else if (strcmp(line, "STOP") == 0) {
+    // Same stop as clrbuf, homing included, but STOP always answers
+    stop_motion();
+    send_line("ESP OK STOP");
   }
   return true;
 }
