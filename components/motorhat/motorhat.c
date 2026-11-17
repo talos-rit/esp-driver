@@ -23,6 +23,9 @@ static TickType_t s_axis_started[MOTORHAT_NUM_AXES];
 // writes that follow can't be intertwined with another task
 static SemaphoreHandle_t s_axis_lock = NULL;
 
+// Set by motorhat_home_cancel, read by every wait in motorhat_home. Only motorhat_home clears it
+static volatile bool s_home_cancel = false;
+
 static bool soft_limit_allows(motorhat_axis_t axis, motorhat_direction_t direction);
 
 // Defined below with the other soft limit functions, started by motorat_init
@@ -226,11 +229,24 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
   return ESP_OK;
 }
 
+// Ends a homing run. It stops every motor and lets other commands run again
+static esp_err_t home_cancelled(void) {
+  ESP_LOGW(TAG, "Homing cancelled");
+  motorhat_emergency_stop(s_handle);
+  s_home_cancel = false;
+  xEventGroupClearBits(g_motor_events, HOMING_FLAG);
+  return ESP_ERR_NOT_FINISHED;
+}
+
+// Returns 0 on a soft limit or a cancel. check s_home_cancel to tell them apart
 static EventBits_t home_wait(motorhat_axis_t axis, motorhat_direction_t direction) {
   while (1) {
     EventBits_t bits = xEventGroupWaitBits(g_motor_events, HOME_EVENT, pdTRUE, pdFALSE, pdMS_TO_TICKS(10));
     if (bits & HOME_EVENT) {
       return bits;
+    }
+    if (s_home_cancel) {
+      return 0;
     }
     if (s_handle->soft_limits_enabled && !soft_limit_allows(axis, direction)) {
       return 0;
@@ -259,6 +275,9 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
 
   // Add delay
   vTaskDelay(pdMS_TO_TICKS(delay_ms));
+  if (s_home_cancel) {
+    return home_cancelled();
+  }
 
   // Stop any movement before homing
   for (int m = MOTORHAT_MOTOR1; m < s_handle->num_motors; m++) {
@@ -269,6 +288,9 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
   // Home each axis individually until we candetermine which motor triggers
   // limit switch and current events
   for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < s_handle->num_axes; axis++) {
+    if (s_home_cancel) {
+      return home_cancelled();
+    }
     int m = s_handle->axis_motor[axis];
     ESP_LOGI(TAG, "Homing motor %d", m);
 
@@ -276,6 +298,9 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
     motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed);
 
     EventBits_t bits = home_wait(axis, MOTORHAT_DIRECTION_FORWARD);
+    if (s_home_cancel) {
+      return home_cancelled();
+    }
 
     // Stop when a homing event is detected
     motorhat_set_motor_speed(s_handle, m, 0);
@@ -285,12 +310,18 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
 
       // Small pause before going opposite direction
       vTaskDelay(pdMS_TO_TICKS(200));
+      if (s_home_cancel) {
+        return home_cancelled();
+      }
 
       // Switch directions and move towards limit switch
       motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BACKWARD);
       motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed);
 
       bits = home_wait(axis, MOTORHAT_DIRECTION_BACKWARD);
+      if (s_home_cancel) {
+        return home_cancelled();
+      }
 
       // Stop when a homing event is detected
       motorhat_set_motor_speed(s_handle, m, 0);
@@ -302,8 +333,11 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
         motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed / 3);
 
         // Detect limit switch release by polling
-        while (!gpio_get_level(s_handle->limit_gpio)) {
+        while (!gpio_get_level(s_handle->limit_gpio) && !s_home_cancel) {
           vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        if (s_home_cancel) {
+          return home_cancelled();
         }
         ESP_LOGI(TAG, "Motor %d finished homing", m);
 
@@ -314,6 +348,7 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
       } else {
         ESP_LOGW(TAG, "Motor %d unexpected homing event detected", m);
         motorhat_emergency_stop(s_handle);
+        s_home_cancel = false;
         xEventGroupClearBits(g_motor_events, HOMING_FLAG);
         return ESP_FAIL;
       }
@@ -323,14 +358,20 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
 
       // Small pause before going the opposite direction
       vTaskDelay(pdMS_TO_TICKS(200));
+      if (s_home_cancel) {
+        return home_cancelled();
+      }
 
       // Turn around and move slowly until limit switch releases
       motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BACKWARD);
       motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed / 3);
 
       // Detect limit switch release by polling
-      while (!gpio_get_level(s_handle->limit_gpio)) {
+      while (!gpio_get_level(s_handle->limit_gpio) && !s_home_cancel) {
         vTaskDelay(pdMS_TO_TICKS(10));
+      }
+      if (s_home_cancel) {
+        return home_cancelled();
       }
       ESP_LOGI(TAG, "Motor %d finished homing", m);
 
@@ -352,9 +393,15 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
     ESP_LOGW(TAG, "Encoder reset callback not found, homing unsuccessful");
   }
 
-  // Clear homing flag
+  // Clear homing flag. A cancel that came after the last check is dropped, the motors are already stopped
+  s_home_cancel = false;
   xEventGroupClearBits(g_motor_events, HOMING_FLAG);
 
+  return ESP_OK;
+}
+
+esp_err_t motorhat_home_cancel(void) {
+  s_home_cancel = true;
   return ESP_OK;
 }
 

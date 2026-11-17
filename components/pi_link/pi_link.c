@@ -96,11 +96,16 @@ static bool key_to_deltas(uint8_t key, int8_t* azimuth, int8_t* altitude) {
   }
 }
 
+// Stops everything, homing included. clrbuf, ~ and a lost key stream all come here
 static void stop_motion(void) {
   s_active_key = 0;
-  // Homing stops the motors itself, and a stop landing as it starts could
-  // brake the axis it is driving
-  if (s_homing) return;
+  // Homing stops the motors itself when it sees the cancel, and home_task
+  // clears s_homing once it returns. 
+  if (s_homing) {
+    s_config.motor.home_cancel();
+    reply("home cancel\r\n");
+    return;
+  }
   s_config.motor.polar_pan_stop();
 }
 
@@ -150,7 +155,10 @@ static void check_key_timeout(void) {
 
 // motorhat_home blocks until done, so it runs here to keep the link read
 static void home_task(void* arg) {
-  s_config.motor.home(0);
+  esp_err_t err = s_config.motor.home(0);
+  reply(err == ESP_OK                 ? "home done\r\n"
+        : err == ESP_ERR_NOT_FINISHED ? "home cancelled\r\n"
+                                      : "home failed\r\n");
   s_homing = false;
   prompt();  // HOME's prompt comes when homing is over, as on the ER-V
   vTaskDelete(NULL);
@@ -258,7 +266,8 @@ static void pi_link_task(void* arg) {
 
 esp_err_t pi_link_init(const pi_link_config_t* config) {
   if (!config || !config->motor.polar_pan_start ||
-      !config->motor.polar_pan_stop || !config->motor.home) {
+      !config->motor.polar_pan_stop || !config->motor.home ||
+      !config->motor.home_cancel) {
     return ESP_ERR_INVALID_ARG;
   }
   s_config = *config;

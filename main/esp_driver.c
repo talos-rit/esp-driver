@@ -629,6 +629,7 @@ void app_main(void) {
               .polar_pan_start = motorhat_polar_pan_start,
               .polar_pan_stop = motorhat_polar_pan_stop,
               .home = motorhat_home,
+              .home_cancel = motorhat_home_cancel,
           },
   };
 #ifdef CONFIG_DRIVER_PI_SERIAL_DEBUG_REPLY

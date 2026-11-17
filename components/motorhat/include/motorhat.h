@@ -274,10 +274,23 @@ esp_err_t motorhat_polar_pan_stop(void);
  *
  * @return
  *    - ESP_OK: Success
+ *    - ESP_ERR_NOT_FINISHED: Cancelled by motorhat_home_cancel, encoders not reset
  *    - ESP_ERR_*: Other ESP-IDF error codes propogated from motor control
  * functions
  */
 esp_err_t motorhat_home(uint16_t delay_ms);
+
+/**
+ * @brief Cancel homing that is running or about to start
+ *
+ * Only sets a request: motorhat_home sees it within about 10 ms, stops every motor and returns ESP_ERR_NOT_FINISHED 
+ * without resetting the encoders. Only call it while a motorhat_home call is pending or running; the request stays
+ * set until a motorhat_home call returns so a stray one cancels the next home
+ *
+ * @return
+ *    - ESP_OK: Request set
+ */
+esp_err_t motorhat_home_cancel(void);
 
 /**
  * @brief Set motor speed
