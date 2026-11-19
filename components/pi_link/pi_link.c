@@ -44,11 +44,6 @@ static TickType_t s_last_key_tick;
 static TickType_t s_last_start_tick;
 static volatile bool s_homing = false;  // Cleared by home_task when done
 
-static void reply(const char* text) {
-  if (!s_config.debug_reply) return;
-  uart_write_bytes(PI_LINK_UART, text, strlen(text));
-}
-
 // Works like printf. Sends a reply line to the Pi with \r\n. The whole line is sent in one
 // write so a reply from another task can't get mixed into the middle of a reply from another.
 static void send_line(const char* format, ...) {
@@ -60,10 +55,24 @@ static void send_line(const char* format, ...) {
   vsnprintf(buf, sizeof(buf)-2, format, args);
   va_end(args);
 
-  // Add line endings 
+  // Add line endings
   strcat(buf, "\r\n");
 
   uart_write_bytes(PI_LINK_UART, buf, strlen(buf));
+}
+
+// Works like send_line, but only when status lines are on in menuconfig.
+// Start every one with "ESP "so operator only logs them and doesn't act on them
+static void send_status(const char* format, ...) {
+  if (!s_config.status_lines) return;
+
+  char buf[PI_LINK_REPLY_MAX];
+  va_list args;
+  va_start(args, format);
+  vsnprintf(buf, sizeof(buf), format, args);
+  va_end(args);
+
+  send_line("%s", buf);
 }
 
 // erv sends its next queued command, and enters manual mode, only after the
@@ -126,7 +135,6 @@ static void stop_motion(void) {
   // clears s_homing once it returns. 
   if (s_homing) {
     s_config.motor.home_cancel();
-    reply("home cancel\r\n");
     return;
   }
   s_config.motor.polar_pan_stop();
@@ -135,15 +143,11 @@ static void stop_motion(void) {
 static void handle_manual_toggle(void) {
   // Nothing should be moving on entering or leaving manual mode
   stop_motion();
-  reply(s_manual_mode ? "manual on\r\n" : "manual off\r\n");
+  send_status(s_manual_mode ? "ESP EVENT MANUAL_ON" : "ESP EVENT MANUAL_OFF");
   if (!s_manual_mode) prompt();
 }
 
 static void handle_manual_key(uint8_t key) {
-  char text[16];
-  snprintf(text, sizeof(text), "key %c\r\n", key);
-  reply(text);
-
   int8_t azimuth, altitude;
   if (!key_to_deltas(key, &azimuth, &altitude)) {
     if (s_active_key) stop_motion();
@@ -172,7 +176,7 @@ static void handle_manual_key(uint8_t key) {
 static void check_key_timeout(void) {
   if (s_active_key && xTaskGetTickCount() - s_last_key_tick > pdMS_TO_TICKS(PI_LINK_KEY_TIMEOUT_MS)) {
     stop_motion();
-    reply("key timeout\r\n");
+    send_status("ESP EVENT JOG_TIMEOUT");
   }
 }
 
@@ -186,18 +190,17 @@ static void home_task(void* arg) {
 
   // Send the spec's reply for how homing ended
   if (err == ESP_OK) {
-    // motorhat_home zeroed the encoders at the home position
-    // this is just for the base (axis 0??) Might need to add for every axis that is homed.
-    send_line("ESP EVENT HOME_DONE BASE=0");
+    send_status("ESP EVENT HOME_DONE");
+  } else if (err == ESP_ERR_NOT_FINISHED) {
+    send_status("ESP EVENT HOME_CANCELLED");
   } else if (err == MOTORHAT_ERR_HOME_OVERCURRENT) {
-    send_line("ESP ERROR HOME OVERCURRENT");
+    send_line("HOME FAULT OVERCURRENT");
   } else if (err == MOTORHAT_ERR_HOME_LIMIT) {
-    send_line("ESP ERROR HOME LIMIT");
+    send_line("HOME FAULT LIMIT");
   } else {
-    // Cancelled by clrbuf, STOP or ~ (ESP_ERR_NOT_FINISHED), homing turned
-    // off in menuconfig (ESP_ERR_NOT_SUPPORTED), or anything unexpected.
-    // None of them moved the arm to home
-    send_line("ESP ERROR HOME ESTOP");
+    // Homing turned off in menuconfig (ESP_ERR_NOT_SUPPORTED) or anything unexpected. A cancel above came 
+    // from clrbuf, STOP or ~, which the Pi sent itself, so it isn't a fault
+    send_line("HOME FAULT DISABLED");
   }
   prompt();  // HOME's prompt comes when homing is over, as on the ER-V
   vTaskDelete(NULL);
@@ -209,14 +212,12 @@ static bool start_homing(void) {
   stop_motion();
   s_homing = true;
 
-  // Signals homing started. Does not mean it is done homing. Sent before the
-  // task exists, so the task's HOME_DONE or ERROR can never come out first
-  // (homing turned off fails at once)
-  send_line("ESP OK HOME");
+  // Sent before the task exists, so the task's result can never come out first
+  send_status("ESP OK HOME");
 
   if (xTaskCreate(home_task, "pi_link_home", 4096, NULL, 5, NULL) != pdPASS) {
     s_homing = false;
-    send_line("ESP ERROR HOME ESTOP");
+    send_line("HOME FAULT DISABLED");
     return false;
   }
   return true;
@@ -232,7 +233,7 @@ static void handle_speed(const char* args) {
 
   // Nothing after SPEED
   if (*args == '\0') {
-    send_line("ESP ERROR BAD_ARGUMENT SPEED");
+    send_status("ESP ERROR SPEED");
     return;
   }
 
@@ -240,38 +241,28 @@ static void handle_speed(const char* args) {
   for (int i = 0; args[i] != '\0'; i++) {
     // Anything except a digit is an error
     if (!isdigit((unsigned char)args[i])) {
-      send_line("ESP ERROR BAD_ARGUMENT SPEED");
+      send_status("ESP ERROR SPEED");
       return;
     }
     percent = percent * 10 + (args[i] - '0'); // args[i] - '0' converts char to int
 
     // Stop if percent is out of range so digits cant overflow percent
     if (percent > 100) {
-      send_line("ESP ERROR BAD_ARGUMENT SPEED");
+      send_status("ESP ERROR SPEED");
       return;
     }
   }
 
-  if (percent < 1) {
-    send_line("ESP ERROR BAD_ARGUMENT SPEED");
+  if (percent < 1 || s_config.motor.set_speed_percent(percent) != ESP_OK) {
+    send_status("ESP ERROR SPEED");
     return;
   }
 
-  // Only send OK if it was really set
-  if (s_config.motor.set_speed_percent(percent) != ESP_OK) {
-    send_line("ESP ERROR BAD_ARGUMENT SPEED");
-    return;
-  }
-
-  send_line("ESP OK SPEED %d", percent);
+  send_status("ESP OK SPEED %d", percent);
 }
 
 // Returns true when the prompt should be sent now
 static bool handle_line(const char* line) {
-  char text[PI_LINK_LINE_MAX + 16];
-  snprintf(text, sizeof(text), "line [%s]\r\n", line);
-  reply(text);
-
   // Exact matches only. Anything else (HERE, DEFP, SHIFT, MOVE, LISTPV, CON)
   // only gets a prompt until relative moves exist (motorhat_polar_pan is a TODO)
   if (strcmp(line, "HOME") == 0) {
@@ -279,9 +270,9 @@ static bool handle_line(const char* line) {
   } else if (strcmp(line, "clrbuf") == 0) {
     stop_motion();
   } else if (strcmp(line, "STOP") == 0) {
-    // Same stop as clrbuf, homing included, but STOP always answers
+    // Same stop as clrbuf, homing included
     stop_motion();
-    send_line("ESP OK STOP");
+    send_status("ESP OK STOP");
   } else if (strcmp(line, "SPEED") == 0 || strncmp(line, "SPEED ", 6) == 0) {
     // line + 5 is everything after the word SPEED
     handle_speed(line + 5);

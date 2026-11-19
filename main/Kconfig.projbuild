@@ -496,13 +496,15 @@ menu "Talos ESP Driver Configuration"
             Must match the Pi's tty. erv never sets the baud; 9600 is the
             ER-V controller's rate and the Linux usb-serial default.
 
-    config DRIVER_PI_SERIAL_DEBUG_REPLY
-        bool "Reply with what was parsed (bench only)"
+    config DRIVER_PI_SERIAL_STATUS
+        bool "Send ESP status lines"
         depends on DRIVER_LINK_PI_SERIAL
-        default n
+        default y
         help
-            For testing from a laptop terminal. Leave off with the Pi
-            attached: if the Pi's tty echoes, replies come back as commands.
+            Adds short "ESP ..." lines (ESP OK HOME, ESP OK SPEED 30, ...)
+            so a laptop terminal or the Pi's log shows what each command
+            did. Operator logs them as "ACL RX: ..." and otherwise ignores
+            them. Turn off to send exactly what an ER-V controller sends.
 
     config DRIVER_MAX_RUN_MS
         int "Longest a pan may run without a new start command (ms)"

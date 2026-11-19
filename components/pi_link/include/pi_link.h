@@ -22,7 +22,7 @@ typedef struct {
  */
 typedef struct {
   int baud_rate;    /**< Must match the Pi's tty */
-  bool debug_reply; /**< Reply with what was parsed. Bench only */
+  bool status_lines; /**< Send "ESP ..." status lines, which operator only logs */
   pi_link_motor_interface_t motor; /**< Motion functions, all required */
 } pi_link_config_t;
 

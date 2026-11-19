@@ -623,7 +623,7 @@ void app_main(void) {
   // Take commands from the Pi's operator over USB serial
   pi_link_config_t pi_link_config = {
       .baud_rate = CONFIG_DRIVER_PI_SERIAL_BAUD,
-      .debug_reply = false,
+      .status_lines = false,
       .motor =
           {
               .polar_pan_start = motorhat_polar_pan_start,
@@ -633,8 +633,8 @@ void app_main(void) {
               .set_speed_percent = motorhat_set_speed_percent,
           },
   };
-#ifdef CONFIG_DRIVER_PI_SERIAL_DEBUG_REPLY
-  pi_link_config.debug_reply = true;
+#ifdef CONFIG_DRIVER_PI_SERIAL_STATUS
+  pi_link_config.status_lines = true;
 #endif
   ESP_ERROR_CHECK(pi_link_init(&pi_link_config));
 #else
