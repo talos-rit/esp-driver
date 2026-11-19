@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdarg.h>
+#include <math.h>
 
 #include "driver/uart.h"
 #include "esp_log.h"
@@ -33,6 +34,21 @@
 #define ACL_XOFF 0x13
 #define ACL_PROMPT '>'
 #define ACL_CTRL_C 0x03  // erv aborts a LISTPV reply with Ctrl-C
+
+// LISTPV POSITION reports axes 1 through 5
+#define LISTPV_POSITION_AXES PI_LINK_AXIS_WRIST_5
+
+// Encoder slots on the ER-V, which is the robot the operator was built for.
+// Our ER-4pc has the same gears but 20 slot encoders, so we scale our counts
+// to match what an ER-V would read. An axis set to 0 is sent unscaled.
+static const int erv_encoder_slots[PI_LINK_MAX_AXES + 1] = {
+    [PI_LINK_AXIS_BASE] = 6,
+    [PI_LINK_AXIS_SHOULDER] = 6,
+    [PI_LINK_AXIS_ELBOW] = 6,
+    [PI_LINK_AXIS_WRIST_4] = 6,
+    [PI_LINK_AXIS_WRIST_5] = 6,
+    [PI_LINK_AXIS_GRIPPER] = 3,
+};
 
 static pi_link_config_t s_config;
 static bool s_manual_mode = false;
@@ -261,11 +277,58 @@ static void handle_speed(const char* args) {
   send_status("ESP OK SPEED %d", percent);
 }
 
+// Reads one axis and converts it to ER-V counts. Disabled axes read as 0
+static esp_err_t read_erv_count(int axis, int32_t* erv_count) {
+  *erv_count = 0;
+  if (!s_config.axes[axis].enabled) {
+    return ESP_OK;
+  }
+
+  int32_t count = 0;
+  esp_err_t err = s_config.motor.read_axis_count(axis, &count);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  int erv_slots = erv_encoder_slots[axis];
+  if (erv_slots == 0) {
+    *erv_count = count;
+    return ESP_OK;
+  }
+
+  int our_slots = s_config.axes[axis].encoder_slots;
+  float scaled = (float)count * erv_slots / our_slots;
+  *erv_count = (int32_t)lroundf(scaled);
+  return ESP_OK;
+}
+
+// Sends the position of each axis like "1:100 2:0 3:-50 4:0 5:0"
+static void handle_listpv_position(void) {
+  char text[PI_LINK_REPLY_MAX] = "";
+  size_t len = 0;
+
+  for (int axis = 1; axis <= LISTPV_POSITION_AXES; axis++) {
+    int32_t count;
+    if (read_erv_count(axis, &count) != ESP_OK) {
+      // Better to send nothing than a wrong position
+      send_status("ESP ERROR LISTPV");
+      return;
+    }
+    if (axis > 1) {
+      len += snprintf(text + len, sizeof(text) - len, " ");
+    }
+    len += snprintf(text + len, sizeof(text) - len, "%d:%ld", axis, (long)count);
+  }
+  send_line("%s", text);
+}
+
 // Returns true when the prompt should be sent now
 static bool handle_line(const char* line) {
-  // Exact matches only. Anything else (HERE, DEFP, SHIFT, MOVE, LISTPV, CON)
+  // Exact matches only. Anything else (HERE, DEFP, SHIFT, MOVE, CON)
   // only gets a prompt until relative moves exist (motorhat_polar_pan is a TODO)
-  if (strcmp(line, "HOME") == 0) {
+  if (strcmp(line, "LISTPV POSITION") == 0) {
+    handle_listpv_position();
+  } else if (strcmp(line, "HOME") == 0) {
     return !start_homing();
   } else if (strcmp(line, "clrbuf") == 0) {
     stop_motion();
@@ -356,8 +419,15 @@ static void pi_link_task(void* arg) {
 esp_err_t pi_link_init(const pi_link_config_t* config) {
   if (!config || !config->motor.polar_pan_start ||
       !config->motor.polar_pan_stop || !config->motor.home ||
-      !config->motor.home_cancel || !config->motor.set_speed_percent) {
+      !config->motor.home_cancel || !config->motor.set_speed_percent ||
+      !config->motor.read_axis_count) {
     return ESP_ERR_INVALID_ARG;
+  }
+  // Every enabled axis needs a slot count since we divide by it
+  for (int axis = 1; axis <= PI_LINK_MAX_AXES; axis++) {
+    if (config->axes[axis].enabled && config->axes[axis].encoder_slots <= 0) {
+      return ESP_ERR_INVALID_ARG;
+    }
   }
   s_config = *config;
 

@@ -196,6 +196,69 @@ static const char* const role_name[MOTORHAT_NUM_AXES] = {
     [MOTORHAT_AXIS_ALTITUDE_B] = "altitude B",
 };
 
+#ifdef CONFIG_DRIVER_LINK_PI_SERIAL
+// Which encoder each axis uses. Indexed by axis number
+typedef struct {
+  bool enabled;
+  int encoder;  // Index into the encoder array
+  int sign;     // 1 or -1 so the count goes up when the + key is pressed
+} axis_encoder_t;
+static axis_encoder_t s_axis_encoder[PI_LINK_MAX_AXES + 1];
+static encoder_array_t* s_pi_link_encoders = NULL;  // Set in setup_pi_link_axes
+
+static esp_err_t read_encoder_axis_count(int axis, int32_t* count) {
+  if (!s_axis_encoder[axis].enabled) {
+    return ESP_ERR_INVALID_ARG;
+  }
+
+  int encoder = s_axis_encoder[axis].encoder;
+  int raw = 0;
+  esp_err_t err =
+      encoder_get_raw_count(&s_pi_link_encoders->encoders[encoder], &raw);
+  if (err != ESP_OK) {
+    return err;
+  }
+
+  *count = s_axis_encoder[axis].sign * raw;
+  return ESP_OK;
+}
+
+// Turns on the axis for each motor we drive. The motor ID is the same as the
+// axis number (see motor_config.h). Every other axis stays off.
+static esp_err_t setup_pi_link_axes(encoder_array_t* encoders,
+                                    pi_link_config_t* config) {
+  s_pi_link_encoders = encoders;
+
+  for (int r = 0; r < NUM_ROLES; r++) {
+    int axis = role_motor_id[r];
+    const motor_setting_t* m = &motor_settings[axis];
+
+    // The + key drives the motor forward, so flip the sign if forward
+    // makes the count go down
+    int sign = 1;
+    if (!m->forward_increases_count) {
+      sign = -1;
+    }
+#ifdef CONFIG_DRIVER_ALTITUDE_B_REVERSED
+    // A reversed altitude B motor is driven backward by the + key
+    if (r == MOTORHAT_AXIS_ALTITUDE_B) {
+      sign = -sign;
+    }
+#endif
+
+    s_axis_encoder[axis].enabled = true;
+    s_axis_encoder[axis].encoder = axis_encoder_index[r];
+    s_axis_encoder[axis].sign = sign;
+
+    config->axes[axis].enabled = true;
+    config->axes[axis].encoder_slots = m->limits.encoder_slots;
+
+    ESP_LOGI(TAG, "Axis %d is %s (%s role)", axis, m->name, role_name[r]);
+  }
+  return ESP_OK;
+}
+#endif
+
 #ifdef CONFIG_DRIVER_CLOSED_LOOP_ENABLE
 // One joint's closed-loop settings from menuconfig, in degrees of the joint
 typedef struct {
@@ -631,11 +694,13 @@ void app_main(void) {
               .home = motorhat_home,
               .home_cancel = motorhat_home_cancel,
               .set_speed_percent = motorhat_set_speed_percent,
+              .read_axis_count = read_encoder_axis_count,
           },
   };
 #ifdef CONFIG_DRIVER_PI_SERIAL_STATUS
   pi_link_config.status_lines = true;
 #endif
+  ESP_ERROR_CHECK(setup_pi_link_axes(&encoder_array, &pi_link_config));
   ESP_ERROR_CHECK(pi_link_init(&pi_link_config));
 #else
   // Initialize Wi-Fi and socket connection
