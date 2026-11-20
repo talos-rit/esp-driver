@@ -73,6 +73,8 @@ typedef struct {
   float pos;           // counts, the joint position reference
   float settled_time;  // s settled with a stop commanded
   bool at_limit;       // the reference is being held back by a soft limit
+  bool going_to;       // driving the reference to goal, then stopping there
+  float goal;          // counts, joint position going_to stops at
 } servo_joint_t;
 
 // Origins start at 0, so count 0 (the boot position) is joint position 0.
@@ -82,6 +84,10 @@ void servo_joint_init(servo_joint_t* j, const servo_joint_params_t* p, int n,
 // dir -1, 0 or +1. A repeated start is ignored apart from keeping it running.
 // A stop (0) ramps down and holds, and also clears a fault.
 void servo_joint_command(servo_joint_t* j, int dir, const int32_t counts[]);
+
+// Drive the joint to position pos at jog speed and stop there. Clears a fault.
+// Any later command or halt cancels it.
+void servo_joint_go_to(servo_joint_t* j, float pos, const int32_t counts[]);
 
 // Stop driving at once (overcurrent, emergency stop): IDLE, integrals cleared.
 void servo_joint_halt(servo_joint_t* j);

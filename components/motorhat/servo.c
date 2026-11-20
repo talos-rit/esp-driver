@@ -50,6 +50,7 @@ static void activate(servo_joint_t* j, const int32_t counts[]) {
 }
 
 void servo_joint_command(servo_joint_t* j, int dir, const int32_t counts[]) {
+  j->going_to = false;  // A jog or stop takes over from a go to
   dir = dir > 0 ? 1 : (dir < 0 ? -1 : 0);
   if (dir == 0) {
     if (j->state == SERVO_FAULT) {
@@ -69,7 +70,21 @@ void servo_joint_command(servo_joint_t* j, int dir, const int32_t counts[]) {
   j->settled_time = 0.0f;
 }
 
+void servo_joint_go_to(servo_joint_t* j, float pos, const int32_t counts[]) {
+  if (j->state == SERVO_FAULT) {
+    j->state = SERVO_IDLE;
+    j->fault = SERVO_FAULT_NONE;
+  }
+  if (j->state == SERVO_IDLE) {
+    activate(j, counts);
+  }
+  j->goal = pos;
+  j->going_to = true;
+  j->settled_time = 0.0f;
+}
+
 void servo_joint_halt(servo_joint_t* j) {
+  j->going_to = false;
   j->dir = 0;
   j->v_ref = 0.0f;
   if (j->state == SERVO_ACTIVE) {
@@ -83,6 +98,7 @@ void servo_joint_halt(servo_joint_t* j) {
 
 static void fault(servo_joint_t* j, servo_fault_t why, int motor) {
   j->state = SERVO_FAULT;
+  j->going_to = false;
   j->fault = why;
   j->fault_motor = motor;
   j->dir = 0;
@@ -96,7 +112,25 @@ static void fault(servo_joint_t* j, servo_fault_t why, int motor) {
 // Reference speed and position for this step
 static void update_reference(servo_joint_t* j, float dt) {
   const servo_joint_params_t* p = &j->p;
+  if (j->going_to) {
+    float dist = j->goal - j->pos;
+    // Within a count of the goal, so finish exactly on it. The slow down
+    // below keeps the reference slow here, so the jump to 0 speed is tiny
+    if (fabsf(dist) <= 1.0f) {
+      j->pos = j->goal;
+      j->v_ref = 0.0f;
+      j->dir = 0;
+      j->going_to = false;
+      return;
+    }
+    j->dir = dist > 0.0f ? 1 : -1;
+  }
   float v_des = (float)j->dir * p->jog_speed;
+  if (j->going_to) {
+    // Slow down in time to stop on the goal
+    float cap = sqrtf(2.0f * p->accel * fabsf(j->goal - j->pos));
+    v_des = clampf(v_des, -cap, cap);
+  }
   j->at_limit = false;
   if (p->limited) {
     // never faster than the speed that can still stop at the limit

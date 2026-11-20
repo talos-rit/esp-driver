@@ -38,4 +38,21 @@ void motorhat_servo_halt(void);
  */
 void motorhat_servo_set_speed_percent(uint8_t percent);
 
+typedef enum {
+  MOTORHAT_SERVO_HOME_BUSY = 0,  // a joint is still on its way to count 0
+  MOTORHAT_SERVO_HOME_DONE,      // every joint got there and settled
+  MOTORHAT_SERVO_HOME_FAULT,     // a joint stopped with a fault on the way
+} motorhat_servo_home_state_t;
+
+/**
+ * @brief Drive every joint back to encoder count 0 at its jog speed. Returns
+ * at once. A jog, stop or halt cancels it.
+ */
+void motorhat_servo_go_home(void);
+
+/**
+ * @brief How motorhat_servo_go_home is getting on
+ */
+motorhat_servo_home_state_t motorhat_servo_home_state(void);
+
 #endif  // _MOTORHAT_SERVO_H_

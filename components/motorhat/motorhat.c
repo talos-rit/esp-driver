@@ -241,44 +241,11 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
   return ESP_OK;
 }
 
-// Ends a homing run. It stops every motor and lets other commands run again
-static esp_err_t home_cancelled(void) {
-  ESP_LOGW(TAG, "Homing cancelled");
-  motorhat_emergency_stop(s_handle);
-  s_home_cancel = false;
-  xEventGroupClearBits(g_motor_events, HOMING_FLAG);
-  return ESP_ERR_NOT_FINISHED;
-}
+// True while motorhat_home drives the axes back to 0. Jogs are refused then
+static volatile bool s_going_home = false;
 
-// Returns 0 on a soft limit or a cancel. check s_home_cancel to tell them apart
-static EventBits_t home_wait(motorhat_axis_t axis, motorhat_direction_t direction) {
-  while (1) {
-    EventBits_t bits = xEventGroupWaitBits(g_motor_events, HOME_EVENT, pdTRUE, pdFALSE, pdMS_TO_TICKS(10));
-    if (bits & HOME_EVENT) {
-      return bits;
-    }
-    if (s_home_cancel) {
-      return 0;
-    }
-    if (s_handle->soft_limits_enabled && !soft_limit_allows(axis, direction)) {
-      return 0;
-    }
-  }
-}
-
-// How long each nudge runs when getting off a pressed limit switch
-#define HOME_NUDGE_MS 500
-
-// Homing drives each axis at its own Speed from the Motors menu, since some
-// axes (the elbow lifting the forearm) need more than others to move at all
-static uint16_t home_speed(motorhat_axis_t axis) {
-  return s_handle->axis_speed_max[axis];
-}
-
-// All limit switches share one pin, which is low while any of them is pressed
-static bool limit_pressed(void) {
-  return gpio_get_level(s_handle->limit_gpio) == 0;
-}
+// Give up going home after this long and just stop where we are
+#define HOME_TIMEOUT_MS 30000
 
 // Tells whoever is listening (the Pi link) about a homing step
 static void home_step(const char* step, int axis) {
@@ -287,195 +254,18 @@ static void home_step(const char* step, int axis) {
   }
 }
 
-// Drives one axis for up to ms. Stops early once no switch is pressed, on a
-// cancel or on an overcurrent
-static void nudge(motorhat_axis_t axis, motorhat_direction_t direction, int ms) {
-  int m = s_handle->axis_motor[axis];
-  motorhat_set_motor_direction(s_handle, m, direction);
-  motorhat_set_motor_speed(s_handle, m, home_speed(axis));
-
-  for (int t = 0; t < ms && limit_pressed(); t += 10) {
-    if (s_home_cancel || (xEventGroupGetBits(g_motor_events) & CURRENT_ANY)) {
-      break;
-    }
-    vTaskDelay(pdMS_TO_TICKS(10));
-  }
-
-  motorhat_set_motor_speed(s_handle, m, 0);
-  motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BRAKE);
-}
-
-// A pressed switch hides every other switch since they share one pin, so
-// homing would never see the switch it is looking for. Before homing, nudge
-// each axis forward and then backward until no switch is pressed. The nudges
-// are short so no axis goes far
-static esp_err_t get_off_limit_switch(void) {
-  bool was_pressed = limit_pressed();
-  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
-    if (!limit_pressed()) {
-      break;
-    }
-    if (!s_handle->axis_enabled[axis]) {
-      continue;
-    }
-    ESP_LOGI(TAG, "A limit switch is pressed, nudging axis %d", axis);
-    home_step("NUDGE", axis);
-
-    // Forward, then back past where it started, then forward to the start
-    nudge(axis, MOTORHAT_DIRECTION_FORWARD, HOME_NUDGE_MS);
-    if (limit_pressed()) {
-      nudge(axis, MOTORHAT_DIRECTION_BACKWARD, 2 * HOME_NUDGE_MS);
-    }
-    if (limit_pressed()) {
-      nudge(axis, MOTORHAT_DIRECTION_FORWARD, HOME_NUDGE_MS);
-    }
-
-    if (s_home_cancel) {
-      return ESP_ERR_NOT_FINISHED;
-    }
-    if (xEventGroupGetBits(g_motor_events) & CURRENT_ANY) {
-      return MOTORHAT_ERR_HOME_OVERCURRENT;
-    }
-  }
-
-  if (limit_pressed()) {
-    ESP_LOGW(TAG, "Still on a limit switch after nudging every axis");
-    home_step("STILL_ON_SWITCH", -1);
-    return MOTORHAT_ERR_HOME_LIMIT;
-  }
-  if (was_pressed) {
-    home_step("OFF_SWITCH", -1);
-  }
-
-  // Let the switch settle, then forget it was pressed so homing starts clean
-  vTaskDelay(pdMS_TO_TICKS(50));
-  xEventGroupClearBits(g_motor_events, LIMIT_ANY);
-  return ESP_OK;
-}
-
-// Give up backing off a switch after this long so a stalled motor stops
-#define HOME_BACKOFF_MS 3000
-// After each axis we wait this long for it to settle, then check the switches
-#define HOME_RECHECK_MS 300
-// How long one axis may drive when backing off a switch again
-#define HOME_RECLEAR_MS 1000
-// The switch must read released this long in a row before the motor stops.
-// This also drives the axis a little past the switch edge, so it does not
-// sag back onto the switch once it is braked (the wrist did)
-#define HOME_CLEAR_MS 300
-// After stopping we wait this long and check the axis did not fall back on
-#define HOME_SETTLE_MS 100
-
-// Slowly drives an axis off the limit switch it just hit. Half speed is slow
-// enough to stop near the switch edge but still strong enough for the wrist.
-// It keeps going until the switch stays released, then brakes and checks
-// again so the next axis never starts with a switch pressed
-static esp_err_t back_off_switch(motorhat_axis_t axis, motorhat_direction_t direction,
-                                 int timeout_ms) {
-  int m = s_handle->axis_motor[axis];
-  TickType_t start = xTaskGetTickCount();
-  bool driving = false;
-  int clear_ms = 0;
-
-  while (1) {
-    if (s_home_cancel) {
-      return ESP_ERR_NOT_FINISHED;
-    }
-    if (xTaskGetTickCount() - start > pdMS_TO_TICKS(timeout_ms)) {
-      motorhat_set_motor_speed(s_handle, m, 0);
-      motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BRAKE);
-      return MOTORHAT_ERR_HOME_LIMIT;
-    }
-
-    if (!driving) {
-      motorhat_set_motor_direction(s_handle, m, direction);
-      motorhat_set_motor_speed(s_handle, m, home_speed(axis) / 2);
-      driving = true;
-      clear_ms = 0;
-    }
-
-    if (limit_pressed()) {
-      clear_ms = 0;  // A bounce or still on it, so start counting again
-    } else {
-      clear_ms += 10;
-    }
-
-    if (clear_ms >= HOME_CLEAR_MS) {
-      // Brake so gravity does not pull it back onto the switch
-      motorhat_set_motor_speed(s_handle, m, 0);
-      motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BRAKE);
-      driving = false;
-      vTaskDelay(pdMS_TO_TICKS(HOME_SETTLE_MS));
-      if (!limit_pressed()) {
-        break;
-      }
-      // It settled back onto the switch, so drive off it again
-    }
-    vTaskDelay(pdMS_TO_TICKS(10));
-  }
-
-  // Forget the presses from this axis so the next one starts clean
-  xEventGroupClearBits(g_motor_events, LIMIT_ANY);
-  return ESP_OK;
-}
-
-// Which way each homed axis drove to get off its switch
-static motorhat_direction_t s_off_switch_dir[MOTORHAT_NUM_AXES];
-
-// Ends a homing run that failed. It stops every motor and returns err
-// Unused while the homing faults are off, so mark it to keep the build happy
-__attribute__((unused)) static esp_err_t home_failed(esp_err_t err) {
-  motorhat_emergency_stop(s_handle);
+// Ends a run of motorhat_home and lets jogs run again
+static esp_err_t home_finish(esp_err_t err) {
   s_home_cancel = false;
-  xEventGroupClearBits(g_motor_events, HOMING_FLAG);
+  s_going_home = false;
   return err;
 }
 
-// After an axis is homed, wait for it to settle and make sure no switch is
-// pressed. If one is, back it off again. The wrist is the usual one since its
-// two motors move one joint, so homing motor 5 can push the wrist back onto
-// the switch motor 4 just left. We only try the axis just homed and its wrist
-// partner. Moving other axes would shift their home
-static esp_err_t stay_off_switches(motorhat_axis_t homed) {
-  vTaskDelay(pdMS_TO_TICKS(HOME_RECHECK_MS));
-  if (!limit_pressed()) {
-    return ESP_OK;
-  }
-
-  int partner = -1;
-  if (homed == MOTORHAT_AXIS_ALTITUDE_B) {
-    partner = MOTORHAT_AXIS_ALTITUDE;
-  }
-
-  int order[MOTORHAT_NUM_AXES];
-  int n = 0;
-  order[n++] = homed;
-  if (partner >= 0 && s_handle->axis_enabled[partner]) {
-    order[n++] = partner;
-  }
-
-  for (int i = 0; i < n && limit_pressed(); i++) {
-    ESP_LOGW(TAG, "A limit switch is pressed, backing axis %d off again", order[i]);
-    home_step("BACK_OFF_AGAIN", order[i]);
-    esp_err_t err = back_off_switch(order[i], s_off_switch_dir[order[i]], HOME_RECLEAR_MS);
-    if (err == ESP_ERR_NOT_FINISHED) {
-      return err;
-    }
-    // A timeout means it was not this axis, so try the partner
-  }
-
-  if (limit_pressed()) {
-    ESP_LOGW(TAG, "Still on a limit switch after homing axis %d", homed);
-    home_step("STILL_ON_SWITCH", -1);
-    return MOTORHAT_ERR_HOME_LIMIT;
-  }
-  xEventGroupClearBits(g_motor_events, LIMIT_ANY);
-  return ESP_OK;
-}
-
-// Socket commands
+// For the Maker Faire demo the limit switches are not used at all. The
+// encoders count from 0 at power up, so that is home. HOME drives every axis
+// back to count 0 with the closed loop. Nothing reads the limit switches
 esp_err_t motorhat_home(uint16_t delay_ms) {
-  if (xEventGroupGetBits(g_motor_events) & HOMING_FLAG) {
+  if (s_going_home) {
     ESP_LOGW(TAG, "Homing in progress, cannot send commands");
     return ESP_ERR_INVALID_STATE;
   }
@@ -486,190 +276,55 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
     ESP_LOGW(TAG, "Homing disabled in menuconfig, home command rejected");
     return ESP_ERR_NOT_SUPPORTED;
   }
+  if (!s_handle->servo_enabled) {
+    ESP_LOGW(TAG, "Going home to count 0 needs the closed loop turned on");
+    return ESP_ERR_NOT_SUPPORTED;
+  }
 
   ESP_LOGI(TAG, "Received home command: delay_ms=%d", delay_ms);
+  s_going_home = true;
 
-  // Set homing flag
-  xEventGroupSetBits(g_motor_events, HOMING_FLAG);
-
-  // Add delay
   vTaskDelay(pdMS_TO_TICKS(delay_ms));
   if (s_home_cancel) {
-    return home_cancelled();
+    motorhat_servo_stop();
+    return home_finish(ESP_ERR_NOT_FINISHED);
   }
 
-  // Stop any movement before homing
-  for (int m = MOTORHAT_MOTOR1; m < s_handle->num_motors; m++) {
-    motorhat_set_motor_speed(s_handle, m, 0);
-    motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_RELEASE);
-  }
+  home_step("GOING_TO_ZERO", -1);
+  motorhat_servo_go_home();
 
-  esp_err_t err = get_off_limit_switch();
-  if (err == ESP_ERR_NOT_FINISHED) {
-    return home_cancelled();
-  }
-  // HOMING FAULTS OFF for the Maker Faire. Not safe, put the return back after
-  // if (err != ESP_OK) {
-  //   motorhat_emergency_stop(s_handle);
-  //   s_home_cancel = false;
-  //   xEventGroupClearBits(g_motor_events, HOMING_FLAG);
-  //   return err;
-  // }
+  TickType_t start = xTaskGetTickCount();
+  while (1) {
+    vTaskDelay(pdMS_TO_TICKS(20));
 
-  // Home each axis individually until we candetermine which motor triggers
-  // limit switch and current events
-  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
-    if (!s_handle->axis_enabled[axis]) {
-      continue;
-    }
     if (s_home_cancel) {
-      return home_cancelled();
-    }
-    int m = s_handle->axis_motor[axis];
-    // A pressed switch would hide this axis's switch, so never start on one
-    if (limit_pressed()) {
-      ESP_LOGW(TAG, "A limit switch is pressed before homing motor %d", m);
-      home_step("STILL_ON_SWITCH", -1);
-      // HOMING FAULTS OFF for the Maker Faire. Not safe, put the return back after
-      // motorhat_emergency_stop(s_handle);
-      // s_home_cancel = false;
-      // xEventGroupClearBits(g_motor_events, HOMING_FLAG);
-      // return MOTORHAT_ERR_HOME_LIMIT;
-    }
-    ESP_LOGI(TAG, "Homing motor %d", m);
-    home_step("AXIS_START", axis);
-
-    motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_FORWARD);
-    motorhat_set_motor_speed(s_handle, m, home_speed(axis));
-
-    EventBits_t bits = home_wait(axis, MOTORHAT_DIRECTION_FORWARD);
-    if (s_home_cancel) {
-      return home_cancelled();
+      ESP_LOGW(TAG, "Homing cancelled");
+      motorhat_servo_stop();
+      return home_finish(ESP_ERR_NOT_FINISHED);
     }
 
-    // Stop when a homing event is detected
-    motorhat_set_motor_speed(s_handle, m, 0);
-
-    if (bits == 0 || (bits & CURRENT_ANY)) {
-      ESP_LOGI(TAG, "Motor %d hit the forward end of its range", m);
-      home_step("RANGE_END", axis);
-
-      // Small pause before going opposite direction
-      vTaskDelay(pdMS_TO_TICKS(200));
-      if (s_home_cancel) {
-        return home_cancelled();
-      }
-
-      // Switch directions and move towards limit switch
-      motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BACKWARD);
-      motorhat_set_motor_speed(s_handle, m, home_speed(axis));
-
-      bits = home_wait(axis, MOTORHAT_DIRECTION_BACKWARD);
-      if (s_home_cancel) {
-        return home_cancelled();
-      }
-
-      // Stop when a homing event is detected
-      motorhat_set_motor_speed(s_handle, m, 0);
-
-      if (bits & LIMIT_ANY) {
-        ESP_LOGI(TAG, "Motor %d hit a limit switch moving backward", m);
-        home_step("SWITCH_HIT", axis);
-
-        // Go forward slowly until the limit switch releases
-        s_off_switch_dir[axis] = MOTORHAT_DIRECTION_FORWARD;
-        err = back_off_switch(axis, MOTORHAT_DIRECTION_FORWARD, HOME_BACKOFF_MS);
-        if (err == ESP_ERR_NOT_FINISHED) {
-          return home_cancelled();
-        }
-        if (err != ESP_OK) {
-          ESP_LOGW(TAG, "Motor %d could not back off the limit switch", m);
-          home_step("STILL_ON_SWITCH", axis);
-          // HOMING FAULTS OFF for the Maker Faire. Not safe, put the return back after
-          // return home_failed(err);
-        }
-        // back_off_switch left the motor braked so it stays off the switch
-        ESP_LOGI(TAG, "Motor %d finished homing", m);
-        home_step("AXIS_DONE", axis);
-
-      } else {
-        // Overcurrent, or a soft limit (bits 0), before reaching the switch
-        ESP_LOGW(TAG, "Motor %d did not find the limit switch moving backward", m);
-        home_step("NO_SWITCH", axis);
-        // Stop just this motor and go on to the next axis
-        motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BRAKE);
-        // HOMING FAULTS OFF for the Maker Faire. Not safe, put the return back after
-        // motorhat_emergency_stop(s_handle);
-        // s_home_cancel = false;
-        // xEventGroupClearBits(g_motor_events, HOMING_FLAG);
-        // if (bits & CURRENT_ANY) {
-        //   return MOTORHAT_ERR_HOME_OVERCURRENT;
-        // }
-        // return MOTORHAT_ERR_HOME_LIMIT;
-      }
-
-    } else if (bits & LIMIT_ANY) {
-      ESP_LOGI(TAG, "Motor %d hit a limit switch moving forward", m);
-      home_step("SWITCH_HIT", axis);
-
-      // Small pause before going the opposite direction
-      vTaskDelay(pdMS_TO_TICKS(200));
-      if (s_home_cancel) {
-        return home_cancelled();
-      }
-
-      // Turn around and move slowly until the limit switch releases
-      s_off_switch_dir[axis] = MOTORHAT_DIRECTION_BACKWARD;
-      err = back_off_switch(axis, MOTORHAT_DIRECTION_BACKWARD, HOME_BACKOFF_MS);
-      if (err == ESP_ERR_NOT_FINISHED) {
-        return home_cancelled();
-      }
-      if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Motor %d could not back off the limit switch", m);
-        home_step("STILL_ON_SWITCH", axis);
-        // HOMING FAULTS OFF for the Maker Faire. Not safe, put the return back after
-        // return home_failed(err);
-      }
-      // back_off_switch left the motor braked so it stays off the switch
-      ESP_LOGI(TAG, "Motor %d finished homing", m);
-      home_step("AXIS_DONE", axis);
-
-    } else {
-      // Can't happen today: home_wait only returns 0, current bits or limit
-      // bits, and the branches above take all three. If it ever does, fail
-      // rather than fall through and zero the encoders away from home
-      ESP_LOGW(TAG, "Motor %d unexpected homing event detected", m);
-      motorhat_emergency_stop(s_handle);
-      s_home_cancel = false;
-      xEventGroupClearBits(g_motor_events, HOMING_FLAG);
-      return ESP_FAIL;
+    motorhat_servo_home_state_t state = motorhat_servo_home_state();
+    if (state == MOTORHAT_SERVO_HOME_DONE) {
+      break;
     }
-
-    // Never leave an axis, or end homing, with a switch pressed
-    err = stay_off_switches(axis);
-    if (err == ESP_ERR_NOT_FINISHED) {
-      return home_cancelled();
+    if (state == MOTORHAT_SERVO_HOME_FAULT) {
+      // A joint stopped with a fault. Clear it and finish anyway for the demo
+      ESP_LOGW(TAG, "A joint faulted on the way home, stopping there");
+      home_step("FAULT_ON_THE_WAY", -1);
+      motorhat_servo_stop();
+      break;
     }
-    // HOMING FAULTS OFF for the Maker Faire. Not safe, put the return back after
-    // if (err != ESP_OK) {
-    //   return home_failed(err);
-    // }
+    if (xTaskGetTickCount() - start > pdMS_TO_TICKS(HOME_TIMEOUT_MS)) {
+      ESP_LOGW(TAG, "Going home took too long, stopping where we are");
+      home_step("TIMEOUT", -1);
+      motorhat_servo_stop();
+      break;
+    }
   }
 
-  // Reset encoder values
-  if (s_handle->encoder_cb) {
-    s_handle->encoder_cb(s_handle->encoder_ctx);
-    ESP_LOGI(TAG, "Homing successful, encoders reset");
-    home_step("ENCODERS_ZEROED", -1);
-  } else {
-    ESP_LOGW(TAG, "Encoder reset callback not found, homing unsuccessful");
-  }
-
-  // Clear homing flag. A cancel that came after the last check is dropped, the motors are already stopped
-  s_home_cancel = false;
-  xEventGroupClearBits(g_motor_events, HOMING_FLAG);
-
-  return ESP_OK;
+  ESP_LOGI(TAG, "Homing done");
+  home_step("AT_ZERO", -1);
+  return home_finish(ESP_OK);
 }
 
 esp_err_t motorhat_home_cancel(void) {
@@ -679,7 +334,7 @@ esp_err_t motorhat_home_cancel(void) {
 
 esp_err_t motorhat_polar_pan(int16_t delta_azimuth, int16_t delta_altitude,
                              uint16_t delay_ms, uint16_t time_ms) {
-  if (xEventGroupGetBits(g_motor_events) & HOMING_FLAG) {
+  if ((xEventGroupGetBits(g_motor_events) & HOMING_FLAG) || s_going_home) {
     ESP_LOGW(TAG, "Homing in progress, cannot send commands");
     return ESP_ERR_INVALID_STATE;
   }
@@ -899,7 +554,7 @@ static esp_err_t start_axes(
 // Starts azimuth, altitude and elbow together. A 0 stops that axis
 static esp_err_t jog_start(int8_t delta_azimuth, int8_t delta_altitude,
                            int8_t delta_elbow) {
-  if (xEventGroupGetBits(g_motor_events) & HOMING_FLAG) {
+  if ((xEventGroupGetBits(g_motor_events) & HOMING_FLAG) || s_going_home) {
     ESP_LOGW(TAG, "Homing in progress, cannot send commands");
     return ESP_ERR_INVALID_STATE;
   }
@@ -948,7 +603,7 @@ esp_err_t motorhat_elbow_start(int8_t delta_elbow) {
 }
 
 esp_err_t motorhat_polar_pan_stop(void) {
-  if (xEventGroupGetBits(g_motor_events) & HOMING_FLAG) {
+  if ((xEventGroupGetBits(g_motor_events) & HOMING_FLAG) || s_going_home) {
     ESP_LOGW(TAG, "Homing in progress, cannot send commands");
     return ESP_ERR_INVALID_STATE;
   }

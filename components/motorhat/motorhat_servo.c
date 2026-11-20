@@ -143,7 +143,9 @@ static void control_task(void* args) {
         write_failed = true;  // can't control blind: stop everything
         break;
       }
-      if (joint->dir != 0 && max_run > 0 && now - s_started[j] > max_run) {
+      // Going home has no key stream to renew it, so it skips the max run
+      if (joint->dir != 0 && !joint->going_to && max_run > 0 &&
+          now - s_started[j] > max_run) {
         servo_joint_command(joint, 0, counts);
         timed_out[j] = true;
       }
@@ -336,6 +338,57 @@ void motorhat_servo_halt(void) {
   xSemaphoreTake(s_lock, portMAX_DELAY);
   halt_all();
   xSemaphoreGive(s_lock);
+}
+
+void motorhat_servo_go_home(void) {
+  if (s_lock == NULL) {
+    return;
+  }
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  for (int j = 0; j < NUM_JOINTS; j++) {
+    servo_joint_t* joint = &s_joint[j];
+    if (joint->n == 0) {
+      continue;
+    }
+    int32_t counts[SERVO_MAX_MOTORS] = {0};
+    if (read_counts(j, counts) != ESP_OK) {
+      continue;
+    }
+    // A motor is at count 0 when origin + sign * pos is 0. Two wrist motors
+    // can have different origins, so aim for the middle of the two
+    float goal = 0.0f;
+    for (int i = 0; i < joint->n; i++) {
+      goal += -(float)joint->mp[i].sign * joint->m[i].origin;
+    }
+    goal /= (float)joint->n;
+    servo_joint_go_to(joint, goal, counts);
+  }
+  xSemaphoreGive(s_lock);
+}
+
+motorhat_servo_home_state_t motorhat_servo_home_state(void) {
+  if (s_lock == NULL) {
+    return MOTORHAT_SERVO_HOME_DONE;
+  }
+  motorhat_servo_home_state_t result = MOTORHAT_SERVO_HOME_DONE;
+  xSemaphoreTake(s_lock, portMAX_DELAY);
+  for (int j = 0; j < NUM_JOINTS; j++) {
+    const servo_joint_t* joint = &s_joint[j];
+    if (joint->n == 0) {
+      continue;
+    }
+    if (joint->state == SERVO_FAULT) {
+      result = MOTORHAT_SERVO_HOME_FAULT;
+      break;
+    }
+    // Still driving, or there but the motors have not settled yet
+    if (joint->state == SERVO_ACTIVE &&
+        (joint->going_to || joint->settled_time < 0.2f)) {
+      result = MOTORHAT_SERVO_HOME_BUSY;
+    }
+  }
+  xSemaphoreGive(s_lock);
+  return result;
 }
 
 void motorhat_servo_set_speed_percent(uint8_t percent) {
