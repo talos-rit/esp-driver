@@ -13,11 +13,12 @@ esp_err_t motorhat_servo_init(motorhat_handle_t* handle,
                               const motorhat_servo_config_t* config);
 
 /**
- * @brief Polar pan start: each delta's sign is that joint's direction, 0
+ * @brief Jog start: each delta's sign is that joint's direction, 0
  * stops it. Commander repeats the start every 100 ms while tracking; a repeat
  * only keeps the joint running.
  */
-void motorhat_servo_start(int8_t delta_azimuth, int8_t delta_altitude);
+void motorhat_servo_start(int8_t delta_azimuth, int8_t delta_altitude,
+                          int8_t delta_elbow);
 
 /**
  * @brief Polar pan stop: both joints ramp down and hold. Also clears a fault.

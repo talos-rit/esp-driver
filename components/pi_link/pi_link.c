@@ -123,10 +123,20 @@ static bool is_manual_key(uint8_t byte) {
 
 // Checked on the bench against the Pi image's erv:
 // RIGHT 'q', LEFT '1', UP '4', DOWN 'r'
-static bool key_to_deltas(uint8_t key, int8_t* azimuth, int8_t* altitude) {
+// The elbow keys follow the same naming in operator acl_private.hpp, '3' is
+// ACL_MAN_POS_ELBOW_AXIS. Commander's tracking sends '3' to move the image up
+static bool key_to_deltas(uint8_t key, int8_t* azimuth, int8_t* altitude,
+                          int8_t* elbow) {
   *azimuth = 0;
   *altitude = 0;
+  *elbow = 0;
   switch (key) {
+    case '3':
+      *elbow = 1;
+      return true;
+    case 'e':
+      *elbow = -1;
+      return true;
     case 'q':
       *azimuth = 1;
       return true;
@@ -140,7 +150,7 @@ static bool key_to_deltas(uint8_t key, int8_t* azimuth, int8_t* altitude) {
       *altitude = -1;
       return true;
     default:
-      return false;  // Shoulder, elbow and roll are not driven
+      return false;  // Shoulder and roll are not driven
   }
 }
 
@@ -164,8 +174,8 @@ static void handle_manual_toggle(void) {
 }
 
 static void handle_manual_key(uint8_t key) {
-  int8_t azimuth, altitude;
-  if (!key_to_deltas(key, &azimuth, &altitude)) {
+  int8_t azimuth, altitude, elbow;
+  if (!key_to_deltas(key, &azimuth, &altitude, &elbow)) {
     if (s_active_key) stop_motion();
     return;
   }
@@ -179,7 +189,13 @@ static void handle_manual_key(uint8_t key) {
   if (key != s_active_key ||
       now - s_last_start_tick >= pdMS_TO_TICKS(PI_LINK_RESTART_MS)) {
     s_last_start_tick = now;
-    if (s_config.motor.polar_pan_start(azimuth, altitude) == ESP_OK) {
+    esp_err_t err;
+    if (elbow != 0) {
+      err = s_config.motor.elbow_start(elbow);
+    } else {
+      err = s_config.motor.polar_pan_start(azimuth, altitude);
+    }
+    if (err == ESP_OK) {
       s_active_key = key;
     } 
     else {
@@ -416,8 +432,12 @@ static void pi_link_task(void* arg) {
   }
 }
 
+void pi_link_send_status(const char* text) {
+  send_status("%s", text);
+}
+
 esp_err_t pi_link_init(const pi_link_config_t* config) {
-  if (!config || !config->motor.polar_pan_start ||
+  if (!config || !config->motor.polar_pan_start || !config->motor.elbow_start ||
       !config->motor.polar_pan_stop || !config->motor.home ||
       !config->motor.home_cancel || !config->motor.set_speed_percent ||
       !config->motor.read_axis_count) {

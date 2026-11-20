@@ -29,7 +29,8 @@ typedef struct {
  */
 typedef struct {
   esp_err_t (*polar_pan_start)(int8_t delta_azimuth, int8_t delta_altitude);
-  esp_err_t (*polar_pan_stop)(void);
+  esp_err_t (*polar_pan_stop)(void);  // Also stops the elbow
+  esp_err_t (*elbow_start)(int8_t delta_elbow);  // Manual elbow keys, + is '3'
   esp_err_t (*home)(uint16_t delay_ms);  // Returns what motorhat_home returns
   esp_err_t (*home_cancel)(void);  // Makes a running home() return early
   esp_err_t (*set_speed_percent)(uint8_t percent);  // SPEED n, 1 to 100
@@ -59,5 +60,15 @@ typedef struct {
  *    - ESP_ERR_*: Errors from the UART driver
  */
 esp_err_t pi_link_init(const pi_link_config_t* config);
+
+/**
+ * @brief Send a status line to the Pi, if status lines are on
+ *
+ * Start it with "ESP " so operator only logs it. Do not put '>' in it since
+ * operator reads that as the prompt.
+ *
+ * @param[in] text The line without \r\n
+ */
+void pi_link_send_status(const char* text);
 
 #endif  // _PI_LINK_H_

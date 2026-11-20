@@ -72,7 +72,7 @@ void motor_stop_task(void* args) {
       xSemaphoreTake(s_axis_lock, portMAX_DELAY);
       motorhat_emergency_stop(s_handle);
       motorhat_servo_halt();
-      for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < s_handle->num_axes;
+      for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES;
            axis++) {
         s_axis_direction[axis] = MOTORHAT_DIRECTION_RELEASE;
       }
@@ -109,11 +109,18 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
   }
   int num_motors = config->num_hats * MOTORHAT_MOTORS_PER_HAT;
 
-  // ALTITUDE_B is the last axis, so leaving it out just shortens the axis loops
-  int num_axes = config->altitude_b_enabled ? MOTORHAT_NUM_AXES
-                                          : MOTORHAT_AXIS_ALTITUDE_B;
+  // Polar pan always needs azimuth and altitude
+  if (!config->axis_enabled[MOTORHAT_AXIS_AZIMUTH] ||
+      !config->axis_enabled[MOTORHAT_AXIS_ALTITUDE]) {
+    ESP_LOGE(TAG, "Azimuth and altitude axes must be enabled");
+    return ESP_ERR_INVALID_ARG;
+  }
+
   // Each axis needs its own valid port, or two axes would fight over one motor
-  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < num_axes; axis++) {
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+    if (!config->axis_enabled[axis]) {
+      continue;
+    }
     motorhat_motor_t motor = config->axis_motor[axis];
     if (motor < MOTORHAT_MOTOR1 || motor >= num_motors) {
       ESP_LOGE(TAG, "Axis %d mapped to invalid motor %d", axis, motor + 1);
@@ -125,7 +132,7 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
       return ESP_ERR_INVALID_ARG;
     }
     for (int other = MOTORHAT_AXIS_AZIMUTH; other < axis; other++) {
-      if (config->axis_motor[other] == motor) {
+      if (config->axis_enabled[other] && config->axis_motor[other] == motor) {
         ESP_LOGE(TAG, "Axes %d and %d both mapped to motor %d", other, axis,
                  motor + 1);
         return ESP_ERR_INVALID_ARG;
@@ -139,7 +146,10 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
       return ESP_ERR_INVALID_ARG;
     }
 
-    for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < num_axes; axis++) {
+    for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+      if (!config->axis_enabled[axis]) {
+        continue;
+      }
       int count = 0;
       esp_err_t err =
           config->axis_count_cb(config->axis_count_ctx, axis, &count);
@@ -171,6 +181,7 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
   s_handle = handle;
   handle->polar_pan_speed = config->polar_pan_speed;
   handle->encoder_cb = config->encoder_cb;
+  handle->home_step_cb = config->home_step_cb;
   handle->encoder_ctx = config->encoder_ctx;
   handle->limit_gpio = config->limit_gpio;
 
@@ -183,13 +194,13 @@ esp_err_t motorhat_init(motorhat_handle_t* handle,
     handle->forward_increases_count[axis] =
         config->forward_increases_count[axis];
     handle->axis_motor[axis] = config->axis_motor[axis];
+    handle->axis_enabled[axis] = config->axis_enabled[axis];
     handle->axis_speed[axis] = config->axis_speed[axis];
     handle->axis_speed_max[axis] = config->axis_speed[axis];
   }
   handle->soft_limit_poll_ms = config->soft_limit_poll_ms;
   handle->max_run_ms = config->max_run_ms;
   handle->altitude_b_reversed = config->altitude_b_reversed;
-  handle->num_axes = num_axes;
   handle->num_hats = config->num_hats;
   handle->num_motors = num_motors;
   handle->servo_enabled = config->servo.enabled;
@@ -255,6 +266,213 @@ static EventBits_t home_wait(motorhat_axis_t axis, motorhat_direction_t directio
   }
 }
 
+// How long each nudge runs when getting off a pressed limit switch
+#define HOME_NUDGE_MS 500
+
+// Homing drives each axis at its own Speed from the Motors menu, since some
+// axes (the elbow lifting the forearm) need more than others to move at all
+static uint16_t home_speed(motorhat_axis_t axis) {
+  return s_handle->axis_speed_max[axis];
+}
+
+// All limit switches share one pin, which is low while any of them is pressed
+static bool limit_pressed(void) {
+  return gpio_get_level(s_handle->limit_gpio) == 0;
+}
+
+// Tells whoever is listening (the Pi link) about a homing step
+static void home_step(const char* step, int axis) {
+  if (s_handle->home_step_cb) {
+    s_handle->home_step_cb(step, axis);
+  }
+}
+
+// Drives one axis for up to ms. Stops early once no switch is pressed, on a
+// cancel or on an overcurrent
+static void nudge(motorhat_axis_t axis, motorhat_direction_t direction, int ms) {
+  int m = s_handle->axis_motor[axis];
+  motorhat_set_motor_direction(s_handle, m, direction);
+  motorhat_set_motor_speed(s_handle, m, home_speed(axis));
+
+  for (int t = 0; t < ms && limit_pressed(); t += 10) {
+    if (s_home_cancel || (xEventGroupGetBits(g_motor_events) & CURRENT_ANY)) {
+      break;
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+
+  motorhat_set_motor_speed(s_handle, m, 0);
+  motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BRAKE);
+}
+
+// A pressed switch hides every other switch since they share one pin, so
+// homing would never see the switch it is looking for. Before homing, nudge
+// each axis forward and then backward until no switch is pressed. The nudges
+// are short so no axis goes far
+static esp_err_t get_off_limit_switch(void) {
+  bool was_pressed = limit_pressed();
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+    if (!limit_pressed()) {
+      break;
+    }
+    if (!s_handle->axis_enabled[axis]) {
+      continue;
+    }
+    ESP_LOGI(TAG, "A limit switch is pressed, nudging axis %d", axis);
+    home_step("NUDGE", axis);
+
+    // Forward, then back past where it started, then forward to the start
+    nudge(axis, MOTORHAT_DIRECTION_FORWARD, HOME_NUDGE_MS);
+    if (limit_pressed()) {
+      nudge(axis, MOTORHAT_DIRECTION_BACKWARD, 2 * HOME_NUDGE_MS);
+    }
+    if (limit_pressed()) {
+      nudge(axis, MOTORHAT_DIRECTION_FORWARD, HOME_NUDGE_MS);
+    }
+
+    if (s_home_cancel) {
+      return ESP_ERR_NOT_FINISHED;
+    }
+    if (xEventGroupGetBits(g_motor_events) & CURRENT_ANY) {
+      return MOTORHAT_ERR_HOME_OVERCURRENT;
+    }
+  }
+
+  if (limit_pressed()) {
+    ESP_LOGW(TAG, "Still on a limit switch after nudging every axis");
+    home_step("STILL_ON_SWITCH", -1);
+    return MOTORHAT_ERR_HOME_LIMIT;
+  }
+  if (was_pressed) {
+    home_step("OFF_SWITCH", -1);
+  }
+
+  // Let the switch settle, then forget it was pressed so homing starts clean
+  vTaskDelay(pdMS_TO_TICKS(50));
+  xEventGroupClearBits(g_motor_events, LIMIT_ANY);
+  return ESP_OK;
+}
+
+// Give up backing off a switch after this long so a stalled motor stops
+#define HOME_BACKOFF_MS 3000
+// After each axis we wait this long for it to settle, then check the switches
+#define HOME_RECHECK_MS 300
+// How long one axis may drive when backing off a switch again
+#define HOME_RECLEAR_MS 1000
+// The switch must read released this long in a row before the motor stops.
+// This also drives the axis a little past the switch edge, so it does not
+// sag back onto the switch once it is braked (the wrist did)
+#define HOME_CLEAR_MS 300
+// After stopping we wait this long and check the axis did not fall back on
+#define HOME_SETTLE_MS 100
+
+// Slowly drives an axis off the limit switch it just hit. Half speed is slow
+// enough to stop near the switch edge but still strong enough for the wrist.
+// It keeps going until the switch stays released, then brakes and checks
+// again so the next axis never starts with a switch pressed
+static esp_err_t back_off_switch(motorhat_axis_t axis, motorhat_direction_t direction,
+                                 int timeout_ms) {
+  int m = s_handle->axis_motor[axis];
+  TickType_t start = xTaskGetTickCount();
+  bool driving = false;
+  int clear_ms = 0;
+
+  while (1) {
+    if (s_home_cancel) {
+      return ESP_ERR_NOT_FINISHED;
+    }
+    if (xTaskGetTickCount() - start > pdMS_TO_TICKS(timeout_ms)) {
+      motorhat_set_motor_speed(s_handle, m, 0);
+      motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BRAKE);
+      return MOTORHAT_ERR_HOME_LIMIT;
+    }
+
+    if (!driving) {
+      motorhat_set_motor_direction(s_handle, m, direction);
+      motorhat_set_motor_speed(s_handle, m, home_speed(axis) / 2);
+      driving = true;
+      clear_ms = 0;
+    }
+
+    if (limit_pressed()) {
+      clear_ms = 0;  // A bounce or still on it, so start counting again
+    } else {
+      clear_ms += 10;
+    }
+
+    if (clear_ms >= HOME_CLEAR_MS) {
+      // Brake so gravity does not pull it back onto the switch
+      motorhat_set_motor_speed(s_handle, m, 0);
+      motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BRAKE);
+      driving = false;
+      vTaskDelay(pdMS_TO_TICKS(HOME_SETTLE_MS));
+      if (!limit_pressed()) {
+        break;
+      }
+      // It settled back onto the switch, so drive off it again
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+
+  // Forget the presses from this axis so the next one starts clean
+  xEventGroupClearBits(g_motor_events, LIMIT_ANY);
+  return ESP_OK;
+}
+
+// Which way each homed axis drove to get off its switch
+static motorhat_direction_t s_off_switch_dir[MOTORHAT_NUM_AXES];
+
+// Ends a homing run that failed. It stops every motor and returns err
+// Unused while the homing faults are off, so mark it to keep the build happy
+__attribute__((unused)) static esp_err_t home_failed(esp_err_t err) {
+  motorhat_emergency_stop(s_handle);
+  s_home_cancel = false;
+  xEventGroupClearBits(g_motor_events, HOMING_FLAG);
+  return err;
+}
+
+// After an axis is homed, wait for it to settle and make sure no switch is
+// pressed. If one is, back it off again. The wrist is the usual one since its
+// two motors move one joint, so homing motor 5 can push the wrist back onto
+// the switch motor 4 just left. We only try the axis just homed and its wrist
+// partner. Moving other axes would shift their home
+static esp_err_t stay_off_switches(motorhat_axis_t homed) {
+  vTaskDelay(pdMS_TO_TICKS(HOME_RECHECK_MS));
+  if (!limit_pressed()) {
+    return ESP_OK;
+  }
+
+  int partner = -1;
+  if (homed == MOTORHAT_AXIS_ALTITUDE_B) {
+    partner = MOTORHAT_AXIS_ALTITUDE;
+  }
+
+  int order[MOTORHAT_NUM_AXES];
+  int n = 0;
+  order[n++] = homed;
+  if (partner >= 0 && s_handle->axis_enabled[partner]) {
+    order[n++] = partner;
+  }
+
+  for (int i = 0; i < n && limit_pressed(); i++) {
+    ESP_LOGW(TAG, "A limit switch is pressed, backing axis %d off again", order[i]);
+    home_step("BACK_OFF_AGAIN", order[i]);
+    esp_err_t err = back_off_switch(order[i], s_off_switch_dir[order[i]], HOME_RECLEAR_MS);
+    if (err == ESP_ERR_NOT_FINISHED) {
+      return err;
+    }
+    // A timeout means it was not this axis, so try the partner
+  }
+
+  if (limit_pressed()) {
+    ESP_LOGW(TAG, "Still on a limit switch after homing axis %d", homed);
+    home_step("STILL_ON_SWITCH", -1);
+    return MOTORHAT_ERR_HOME_LIMIT;
+  }
+  xEventGroupClearBits(g_motor_events, LIMIT_ANY);
+  return ESP_OK;
+}
+
 // Socket commands
 esp_err_t motorhat_home(uint16_t delay_ms) {
   if (xEventGroupGetBits(g_motor_events) & HOMING_FLAG) {
@@ -286,17 +504,43 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
     motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_RELEASE);
   }
 
+  esp_err_t err = get_off_limit_switch();
+  if (err == ESP_ERR_NOT_FINISHED) {
+    return home_cancelled();
+  }
+  // HOMING FAULTS OFF for the Maker Faire. Not safe, put the return back after
+  // if (err != ESP_OK) {
+  //   motorhat_emergency_stop(s_handle);
+  //   s_home_cancel = false;
+  //   xEventGroupClearBits(g_motor_events, HOMING_FLAG);
+  //   return err;
+  // }
+
   // Home each axis individually until we candetermine which motor triggers
   // limit switch and current events
-  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < s_handle->num_axes; axis++) {
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+    if (!s_handle->axis_enabled[axis]) {
+      continue;
+    }
     if (s_home_cancel) {
       return home_cancelled();
     }
     int m = s_handle->axis_motor[axis];
+    // A pressed switch would hide this axis's switch, so never start on one
+    if (limit_pressed()) {
+      ESP_LOGW(TAG, "A limit switch is pressed before homing motor %d", m);
+      home_step("STILL_ON_SWITCH", -1);
+      // HOMING FAULTS OFF for the Maker Faire. Not safe, put the return back after
+      // motorhat_emergency_stop(s_handle);
+      // s_home_cancel = false;
+      // xEventGroupClearBits(g_motor_events, HOMING_FLAG);
+      // return MOTORHAT_ERR_HOME_LIMIT;
+    }
     ESP_LOGI(TAG, "Homing motor %d", m);
+    home_step("AXIS_START", axis);
 
     motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_FORWARD);
-    motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed);
+    motorhat_set_motor_speed(s_handle, m, home_speed(axis));
 
     EventBits_t bits = home_wait(axis, MOTORHAT_DIRECTION_FORWARD);
     if (s_home_cancel) {
@@ -308,6 +552,7 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
 
     if (bits == 0 || (bits & CURRENT_ANY)) {
       ESP_LOGI(TAG, "Motor %d hit the forward end of its range", m);
+      home_step("RANGE_END", axis);
 
       // Small pause before going opposite direction
       vTaskDelay(pdMS_TO_TICKS(200));
@@ -317,7 +562,7 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
 
       // Switch directions and move towards limit switch
       motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BACKWARD);
-      motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed);
+      motorhat_set_motor_speed(s_handle, m, home_speed(axis));
 
       bits = home_wait(axis, MOTORHAT_DIRECTION_BACKWARD);
       if (s_home_cancel) {
@@ -329,37 +574,43 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
 
       if (bits & LIMIT_ANY) {
         ESP_LOGI(TAG, "Motor %d hit a limit switch moving backward", m);
+        home_step("SWITCH_HIT", axis);
 
-        // Continue forward slowly until limit switch releases
-        motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed / 3);
-
-        // Detect limit switch release by polling
-        while (!gpio_get_level(s_handle->limit_gpio) && !s_home_cancel) {
-          vTaskDelay(pdMS_TO_TICKS(10));
-        }
-        if (s_home_cancel) {
+        // Go forward slowly until the limit switch releases
+        s_off_switch_dir[axis] = MOTORHAT_DIRECTION_FORWARD;
+        err = back_off_switch(axis, MOTORHAT_DIRECTION_FORWARD, HOME_BACKOFF_MS);
+        if (err == ESP_ERR_NOT_FINISHED) {
           return home_cancelled();
         }
+        if (err != ESP_OK) {
+          ESP_LOGW(TAG, "Motor %d could not back off the limit switch", m);
+          home_step("STILL_ON_SWITCH", axis);
+          // HOMING FAULTS OFF for the Maker Faire. Not safe, put the return back after
+          // return home_failed(err);
+        }
+        // back_off_switch left the motor braked so it stays off the switch
         ESP_LOGI(TAG, "Motor %d finished homing", m);
-
-        // Homing finished, stop the motor and continue sequence
-        motorhat_set_motor_speed(s_handle, m, 0);
-        motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_RELEASE);
+        home_step("AXIS_DONE", axis);
 
       } else {
         // Overcurrent, or a soft limit (bits 0), before reaching the switch
         ESP_LOGW(TAG, "Motor %d did not find the limit switch moving backward", m);
-        motorhat_emergency_stop(s_handle);
-        s_home_cancel = false;
-        xEventGroupClearBits(g_motor_events, HOMING_FLAG);
-        if (bits & CURRENT_ANY) {
-          return MOTORHAT_ERR_HOME_OVERCURRENT;
-        }
-        return MOTORHAT_ERR_HOME_LIMIT;
+        home_step("NO_SWITCH", axis);
+        // Stop just this motor and go on to the next axis
+        motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BRAKE);
+        // HOMING FAULTS OFF for the Maker Faire. Not safe, put the return back after
+        // motorhat_emergency_stop(s_handle);
+        // s_home_cancel = false;
+        // xEventGroupClearBits(g_motor_events, HOMING_FLAG);
+        // if (bits & CURRENT_ANY) {
+        //   return MOTORHAT_ERR_HOME_OVERCURRENT;
+        // }
+        // return MOTORHAT_ERR_HOME_LIMIT;
       }
 
     } else if (bits & LIMIT_ANY) {
       ESP_LOGI(TAG, "Motor %d hit a limit switch moving forward", m);
+      home_step("SWITCH_HIT", axis);
 
       // Small pause before going the opposite direction
       vTaskDelay(pdMS_TO_TICKS(200));
@@ -367,22 +618,21 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
         return home_cancelled();
       }
 
-      // Turn around and move slowly until limit switch releases
-      motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_BACKWARD);
-      motorhat_set_motor_speed(s_handle, m, s_handle->polar_pan_speed / 3);
-
-      // Detect limit switch release by polling
-      while (!gpio_get_level(s_handle->limit_gpio) && !s_home_cancel) {
-        vTaskDelay(pdMS_TO_TICKS(10));
-      }
-      if (s_home_cancel) {
+      // Turn around and move slowly until the limit switch releases
+      s_off_switch_dir[axis] = MOTORHAT_DIRECTION_BACKWARD;
+      err = back_off_switch(axis, MOTORHAT_DIRECTION_BACKWARD, HOME_BACKOFF_MS);
+      if (err == ESP_ERR_NOT_FINISHED) {
         return home_cancelled();
       }
+      if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Motor %d could not back off the limit switch", m);
+        home_step("STILL_ON_SWITCH", axis);
+        // HOMING FAULTS OFF for the Maker Faire. Not safe, put the return back after
+        // return home_failed(err);
+      }
+      // back_off_switch left the motor braked so it stays off the switch
       ESP_LOGI(TAG, "Motor %d finished homing", m);
-
-      // Homing finished, stop the motor and continue sequence
-      motorhat_set_motor_speed(s_handle, m, 0);
-      motorhat_set_motor_direction(s_handle, m, MOTORHAT_DIRECTION_RELEASE);
+      home_step("AXIS_DONE", axis);
 
     } else {
       // Can't happen today: home_wait only returns 0, current bits or limit
@@ -394,12 +644,23 @@ esp_err_t motorhat_home(uint16_t delay_ms) {
       xEventGroupClearBits(g_motor_events, HOMING_FLAG);
       return ESP_FAIL;
     }
+
+    // Never leave an axis, or end homing, with a switch pressed
+    err = stay_off_switches(axis);
+    if (err == ESP_ERR_NOT_FINISHED) {
+      return home_cancelled();
+    }
+    // HOMING FAULTS OFF for the Maker Faire. Not safe, put the return back after
+    // if (err != ESP_OK) {
+    //   return home_failed(err);
+    // }
   }
 
   // Reset encoder values
   if (s_handle->encoder_cb) {
     s_handle->encoder_cb(s_handle->encoder_ctx);
     ESP_LOGI(TAG, "Homing successful, encoders reset");
+    home_step("ENCODERS_ZEROED", -1);
   } else {
     ESP_LOGW(TAG, "Encoder reset callback not found, homing unsuccessful");
   }
@@ -508,7 +769,7 @@ static void stop_axis(motorhat_axis_t axis) {
 // Caller must hold s_axis_lock.
 static void stop_axis_and_partner(motorhat_axis_t axis) {
   stop_axis(axis);
-  if (s_handle->num_axes <= MOTORHAT_AXIS_ALTITUDE_B) {
+  if (!s_handle->axis_enabled[MOTORHAT_AXIS_ALTITUDE_B]) {
     return;
   }
   if (axis == MOTORHAT_AXIS_ALTITUDE) {
@@ -537,7 +798,10 @@ static void soft_limit_monitor_task(void* args) {
 
     xSemaphoreTake(s_axis_lock, portMAX_DELAY);
     TickType_t now = xTaskGetTickCount();
-    for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < s_handle->num_axes; axis++) {
+    for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+      if (!s_handle->axis_enabled[axis]) {
+        continue;
+      }
       motorhat_direction_t direction = s_axis_direction[axis];
       if (direction != MOTORHAT_DIRECTION_FORWARD &&
           direction != MOTORHAT_DIRECTION_BACKWARD) {
@@ -564,8 +828,17 @@ static void soft_limit_monitor_task(void* args) {
 static esp_err_t start_axes(
     motorhat_direction_t directions[MOTORHAT_NUM_AXES]) {
   bool blocked[MOTORHAT_NUM_AXES] = {false};
+  // Disabled axes are skipped by every loop below
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+    if (!s_handle->axis_enabled[axis]) {
+      blocked[axis] = true;
+    }
+  }
   if (s_handle->soft_limits_enabled) {
-    for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < s_handle->num_axes; axis++) {
+    for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+      if (blocked[axis]) {
+        continue;
+      }
       if (!soft_limit_allows(axis, directions[axis])) {
         directions[axis] = MOTORHAT_DIRECTION_BRAKE;
         blocked[axis] = true;
@@ -574,7 +847,7 @@ static esp_err_t start_axes(
   }
 
   // Never drive one of two altitude motors alone, it would roll the wrist
-  if (s_handle->num_axes > MOTORHAT_AXIS_ALTITUDE_B &&
+  if (s_handle->axis_enabled[MOTORHAT_AXIS_ALTITUDE_B] &&
       (blocked[MOTORHAT_AXIS_ALTITUDE] || blocked[MOTORHAT_AXIS_ALTITUDE_B])) {
     directions[MOTORHAT_AXIS_ALTITUDE] = MOTORHAT_DIRECTION_BRAKE;
     directions[MOTORHAT_AXIS_ALTITUDE_B] = MOTORHAT_DIRECTION_BRAKE;
@@ -582,8 +855,11 @@ static esp_err_t start_axes(
     blocked[MOTORHAT_AXIS_ALTITUDE_B] = true;
   }
 
-  // set both axes speed to 0 to prevent direction change while moving
-  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < s_handle->num_axes; axis++) {
+  // set every axis speed to 0 to prevent direction change while moving
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+    if (!s_handle->axis_enabled[axis]) {
+      continue;
+    }
     esp_err_t err =
         motorhat_set_motor_speed(s_handle, s_handle->axis_motor[axis], 0);
     if (err != ESP_OK) {
@@ -592,7 +868,10 @@ static esp_err_t start_axes(
   }
 
   // Set directions
-  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < s_handle->num_axes; axis++) {
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
+    if (!s_handle->axis_enabled[axis]) {
+      continue;
+    }
     esp_err_t err = motorhat_set_motor_direction(
         s_handle, s_handle->axis_motor[axis], directions[axis]);
     if (err != ESP_OK) {
@@ -602,7 +881,7 @@ static esp_err_t start_axes(
   }
 
   // Set speeds to a default value
-  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < s_handle->num_axes; axis++) {
+  for (int axis = MOTORHAT_AXIS_AZIMUTH; axis < MOTORHAT_NUM_AXES; axis++) {
     if (blocked[axis]) {
       continue;
     }
@@ -617,8 +896,9 @@ static esp_err_t start_axes(
   return ESP_OK;
 }
 
-esp_err_t motorhat_polar_pan_start(int8_t delta_azimuth,
-                                   int8_t delta_altitude) {
+// Starts azimuth, altitude and elbow together. A 0 stops that axis
+static esp_err_t jog_start(int8_t delta_azimuth, int8_t delta_altitude,
+                           int8_t delta_elbow) {
   if (xEventGroupGetBits(g_motor_events) & HOMING_FLAG) {
     ESP_LOGW(TAG, "Homing in progress, cannot send commands");
     return ESP_ERR_INVALID_STATE;
@@ -626,19 +906,20 @@ esp_err_t motorhat_polar_pan_start(int8_t delta_azimuth,
 
   if (s_handle == NULL) return ESP_ERR_INVALID_STATE;
 
-  ESP_LOGI(
-      TAG,
-      "Received polar pan start command: delta_azimuth=%d, delta_altitude=%d",
-      delta_azimuth, delta_altitude);
+  ESP_LOGI(TAG,
+           "Received jog start command: delta_azimuth=%d, delta_altitude=%d, "
+           "delta_elbow=%d",
+           delta_azimuth, delta_altitude, delta_elbow);
 
   if (s_handle->servo_enabled) {
-    motorhat_servo_start(delta_azimuth, delta_altitude);
+    motorhat_servo_start(delta_azimuth, delta_altitude, delta_elbow);
     return ESP_OK;
   }
 
   motorhat_direction_t directions[MOTORHAT_NUM_AXES] = {
       [MOTORHAT_AXIS_AZIMUTH] = delta_to_direction(delta_azimuth),
       [MOTORHAT_AXIS_ALTITUDE] = delta_to_direction(delta_altitude),
+      [MOTORHAT_AXIS_ELBOW] = delta_to_direction(delta_elbow),
       [MOTORHAT_AXIS_ALTITUDE_B] = delta_to_direction(delta_altitude),
   };
   if (s_handle->altitude_b_reversed) {
@@ -651,6 +932,19 @@ esp_err_t motorhat_polar_pan_start(int8_t delta_azimuth,
   xSemaphoreGive(s_axis_lock);
 
   return err;
+}
+
+esp_err_t motorhat_polar_pan_start(int8_t delta_azimuth,
+                                   int8_t delta_altitude) {
+  return jog_start(delta_azimuth, delta_altitude, 0);
+}
+
+esp_err_t motorhat_elbow_start(int8_t delta_elbow) {
+  if (s_handle == NULL) return ESP_ERR_INVALID_STATE;
+  if (!s_handle->axis_enabled[MOTORHAT_AXIS_ELBOW]) {
+    return ESP_ERR_NOT_SUPPORTED;
+  }
+  return jog_start(0, 0, delta_elbow);
 }
 
 esp_err_t motorhat_polar_pan_stop(void) {
@@ -704,8 +998,10 @@ esp_err_t motorhat_set_speed_percent(uint8_t percent) {
   xSemaphoreGive(s_axis_lock);
 
   ESP_LOGI(TAG, "Pan speed %d%%", percent);
-  for (int axis = 0; axis < s_handle->num_axes; axis++) {
-    ESP_LOGI(TAG, "    axis %d: duty %d", axis, s_handle->axis_speed[axis]);
+  for (int axis = 0; axis < MOTORHAT_NUM_AXES; axis++) {
+    if (s_handle->axis_enabled[axis]) {
+      ESP_LOGI(TAG, "    axis %d: duty %d", axis, s_handle->axis_speed[axis]);
+    }
   }
 
   return ESP_OK;

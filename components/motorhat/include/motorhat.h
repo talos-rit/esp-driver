@@ -50,9 +50,13 @@ typedef enum {
 typedef enum {
   MOTORHAT_AXIS_AZIMUTH = 0,
   MOTORHAT_AXIS_ALTITUDE,
-  MOTORHAT_AXIS_ALTITUDE_B, /**< Optional second altitude motor, must stay last */
+  MOTORHAT_AXIS_ELBOW,      /**< Optional, moves with its own jog command */
+  MOTORHAT_AXIS_ALTITUDE_B, /**< Optional second altitude motor */
   MOTORHAT_NUM_AXES
 } motorhat_axis_t;
+
+/** Closed loop joints. Both altitude motors share the altitude joint */
+#define MOTORHAT_SERVO_JOINTS 3
 
 /**
  * @brief Soft limit bounds for one axis in raw encoder counts
@@ -82,6 +86,14 @@ typedef esp_err_t (*motorhat_axis_count_cb_t)(void* ctx, motorhat_axis_t axis, i
 typedef void (*motorhat_encoder_cb_t)(void* ctx);
 
 /**
+ * @brief Function callback told about each step of homing
+ *
+ * @param[in] step What just happened, like "NUDGE" or "SWITCH_HIT"
+ * @param[in] axis The axis it happened on, or -1 for none
+ */
+typedef void (*motorhat_home_step_cb_t)(const char* step, int axis);
+
+/**
  * @brief Motor direction and state control
  */
 typedef enum {
@@ -107,15 +119,15 @@ typedef struct {
 /**
  * @brief Closed-loop jog settings (servo.h)
  *
- * joint[0] is azimuth and joint[1] altitude; motor[] is indexed by
- * motorhat_axis_t. With ALTITUDE_B enabled both wrist motors follow the
- * altitude joint.
+ * joint[0] is azimuth, joint[1] altitude and joint[2] elbow. motor[] is
+ * indexed by motorhat_axis_t. With ALTITUDE_B enabled both wrist motors follow
+ * the altitude joint.
  */
 typedef struct {
   bool enabled; /**< Polar pan start and stop drive the closed loop instead of a fixed PWM */
   uint32_t period_ms; /**< Control period */
   uint32_t log_ms; /**< Debug log period, 0 turns the log off */
-  servo_joint_params_t joint[2]; /**< Azimuth, altitude */
+  servo_joint_params_t joint[MOTORHAT_SERVO_JOINTS]; /**< Azimuth, altitude, elbow */
   servo_motor_params_t motor[MOTORHAT_NUM_AXES]; /**< Per axis, indexed by motorhat_axis_t */
 } motorhat_servo_config_t;
 
@@ -128,6 +140,7 @@ typedef struct {
   uint16_t polar_pan_speed; /**< Speed to use for polar pan movements */
   motorhat_encoder_cb_t encoder_cb; /**< Clear encoder count function callback */
   void* encoder_ctx; /** < Clear encoder count callback context (the encoder handle) */
+  motorhat_home_step_cb_t home_step_cb; /**< Told about each homing step, optional */
   gpio_num_t limit_gpio; /**< GPIO number for limit switch pin */
 
   bool soft_limits_enabled; /**< Enforce soft limits when true */
@@ -139,7 +152,7 @@ typedef struct {
   uint32_t soft_limit_poll_ms; /**< How often the soft limit monitor checks moving axes */
   uint32_t max_run_ms; /**< Stop an axis driven this long without a new start command, 0 disables */
   motorhat_motor_t axis_motor[MOTORHAT_NUM_AXES]; /**< Motor HAT port driving each axis, indexed by motorhat_axis_t */
-  bool altitude_b_enabled; /**< Altitude commands also drive MOTORHAT_AXIS_ALTITUDE_B */
+  bool axis_enabled[MOTORHAT_NUM_AXES]; /**< Disabled axes are never driven, homed or read. Azimuth and altitude are required */
   bool altitude_b_reversed; /**< Drive ALTITUDE_B opposite to ALTITUDE (pitch on a differential wrist) */
   uint16_t axis_speed[MOTORHAT_NUM_AXES]; /**< Polar pan PWM duty (0 to PCA9685_PWM_MAX) for each axis */
   motorhat_servo_config_t servo; /**< Closed-loop jog, used when servo.enabled */
@@ -155,6 +168,7 @@ typedef struct {
   uint16_t polar_pan_speed; /**< Speed to use for polar pan movements */
   motorhat_encoder_cb_t encoder_cb; /**< Clear encoder count function callback */
   void* encoder_ctx; /** < Clear encoder count callback context (the encoder handle) */
+  motorhat_home_step_cb_t home_step_cb; /**< Told about each homing step, may be NULL */
   gpio_num_t limit_gpio; /**< GPIO number for limit switch pin */
 
   bool soft_limits_enabled; /**< Enforce soft limits when true */
@@ -167,7 +181,7 @@ typedef struct {
   uint32_t max_run_ms; /**< Stop an axis driven this long without a new start command, 0 disables */
   motorhat_motor_t axis_motor[MOTORHAT_NUM_AXES]; /**< Motor HAT port driving each axis, indexed by motorhat_axis_t */
   bool altitude_b_reversed; /**< Drive ALTITUDE_B opposite to ALTITUDE (pitch on a differential wrist) */
-  int num_axes; /**< Axes in use, MOTORHAT_NUM_AXES with ALTITUDE_B enabled and one fewer without */
+  bool axis_enabled[MOTORHAT_NUM_AXES]; /**< Axes in use */
   uint16_t axis_speed[MOTORHAT_NUM_AXES]; /**< Polar pan PWM duty (0 to PCA9685_PWM_MAX) for each axis, scaled by motorhat_set_speed_percent */
   uint16_t axis_speed_max[MOTORHAT_NUM_AXES]; /**< The configured axis_speed, used at 100 percent */
   bool servo_enabled; /**< Polar pan goes to the closed loop (motorhat_servo.c) */
@@ -248,6 +262,22 @@ esp_err_t motorhat_polar_pan(int16_t delta_azimuth, int16_t delta_altitude,
  * functions
  */
 esp_err_t motorhat_polar_pan_start(int8_t delta_azimuth, int8_t delta_altitude);
+
+/**
+ * @brief Elbow jog start command
+ *
+ * Starts moving the elbow until motorhat_polar_pan_stop. Every other axis
+ * stops, the same as a polar pan start that leaves them at 0.
+ *
+ * @param[in] delta_elbow Direction, the sign is all that is used
+ *
+ * @return
+ *    - ESP_OK: Success
+ *    - ESP_ERR_NOT_SUPPORTED: The elbow is disabled in menuconfig
+ *    - ESP_ERR_*: Other ESP-IDF error codes propogated from motor control
+ * functions
+ */
+esp_err_t motorhat_elbow_start(int8_t delta_elbow);
 
 /**
  * @brief Polar pan stop command

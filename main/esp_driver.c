@@ -1,6 +1,9 @@
 #include <inttypes.h>
 #include <math.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "ads1015.h"
 #include "driver/gpio.h"
@@ -36,6 +39,30 @@ static const driver_socket_api_motor_interface_t motor_interface = {
 };
 #endif
 
+// The motor picked for each role in the Axes menu. 0 means the role is off
+static const int role_motor_id[MOTORHAT_NUM_AXES] = {
+    [MOTORHAT_AXIS_AZIMUTH] = CONFIG_DRIVER_AZIMUTH_MOTOR_ID,
+    [MOTORHAT_AXIS_ALTITUDE] = CONFIG_DRIVER_ALTITUDE_MOTOR_ID,
+#ifdef CONFIG_DRIVER_ELBOW_ENABLE
+    [MOTORHAT_AXIS_ELBOW] = CONFIG_DRIVER_ELBOW_MOTOR_ID,
+#endif
+#ifdef CONFIG_DRIVER_ALTITUDE_B_ENABLE
+    [MOTORHAT_AXIS_ALTITUDE_B] = CONFIG_DRIVER_ALTITUDE_B_MOTOR_ID,
+#endif
+};
+static const char* const role_name[MOTORHAT_NUM_AXES] = {
+    [MOTORHAT_AXIS_AZIMUTH] = "azimuth",
+    [MOTORHAT_AXIS_ALTITUDE] = "altitude",
+    [MOTORHAT_AXIS_ELBOW] = "elbow",
+    [MOTORHAT_AXIS_ALTITUDE_B] = "altitude B",
+};
+
+static bool role_on(int role) {
+  return role_motor_id[role] != 0;
+}
+
+// One encoder per role, indexed by role. Encoders of roles that are off are
+// never started, so they are skipped here
 typedef struct {
   encoder_handle_t* encoders;
   int count;
@@ -44,29 +71,20 @@ typedef struct {
 void clear_all_encoders(void* ctx) {
   encoder_array_t* arr = (encoder_array_t*)ctx;
   for (int i = 0; i < arr->count; i++) {
-    encoder_clear_count(&arr->encoders[i]);
+    if (role_on(i)) {
+      encoder_clear_count(&arr->encoders[i]);
+    }
   }
 }
-
-static const int axis_encoder_index[MOTORHAT_NUM_AXES] = {
-    [MOTORHAT_AXIS_AZIMUTH] = 0,
-    [MOTORHAT_AXIS_ALTITUDE] = 1,
-    [MOTORHAT_AXIS_ALTITUDE_B] = 2,
-};
 
 static esp_err_t read_axis_count(void* ctx, motorhat_axis_t axis, int* count) {
   encoder_array_t* arr = (encoder_array_t*)ctx;
   if (arr == NULL || count == NULL || axis < MOTORHAT_AXIS_AZIMUTH ||
-      axis >= MOTORHAT_NUM_AXES) {
+      axis >= arr->count || !role_on(axis)) {
     return ESP_ERR_INVALID_ARG;
   }
 
-  int index = axis_encoder_index[axis];
-  if (index >= arr->count) {
-    return ESP_ERR_INVALID_ARG;
-  }
-
-  return encoder_get_raw_count(&arr->encoders[index], count);
+  return encoder_get_raw_count(&arr->encoders[axis], count);
 }
 
 // Each encoder slot produces 4 counts due to x4 quadrature decoding (see
@@ -177,25 +195,6 @@ static int motor_hat_port(int id) {
   return motor_settings[id].port % MOTORHAT_MOTORS_PER_HAT + 1;
 }
 
-// The motor picked for each role in the Axes menu
-#ifdef CONFIG_DRIVER_ALTITUDE_B_ENABLE
-#define NUM_ROLES 3
-#else
-#define NUM_ROLES 2
-#endif
-static const int role_motor_id[MOTORHAT_NUM_AXES] = {
-    [MOTORHAT_AXIS_AZIMUTH] = CONFIG_DRIVER_AZIMUTH_MOTOR_ID,
-    [MOTORHAT_AXIS_ALTITUDE] = CONFIG_DRIVER_ALTITUDE_MOTOR_ID,
-#ifdef CONFIG_DRIVER_ALTITUDE_B_ENABLE
-    [MOTORHAT_AXIS_ALTITUDE_B] = CONFIG_DRIVER_ALTITUDE_B_MOTOR_ID,
-#endif
-};
-static const char* const role_name[MOTORHAT_NUM_AXES] = {
-    [MOTORHAT_AXIS_AZIMUTH] = "azimuth",
-    [MOTORHAT_AXIS_ALTITUDE] = "altitude",
-    [MOTORHAT_AXIS_ALTITUDE_B] = "altitude B",
-};
-
 #ifdef CONFIG_DRIVER_LINK_PI_SERIAL
 // Which encoder each axis uses. Indexed by axis number
 typedef struct {
@@ -223,13 +222,71 @@ static esp_err_t read_encoder_axis_count(int axis, int32_t* count) {
   return ESP_OK;
 }
 
+// Sends each homing step to the Pi, like "ESP EVENT HOME_NUDGE AXIS 1"
+static void pi_link_home_step(const char* step, int role) {
+  char text[64];
+  if (role < 0) {
+    snprintf(text, sizeof(text), "ESP EVENT HOME_%s", step);
+  } else {
+    snprintf(text, sizeof(text), "ESP EVENT HOME_%s AXIS %d", step,
+             role_motor_id[role]);
+  }
+  pi_link_send_status(text);
+}
+
+#ifdef CONFIG_DRIVER_PI_SERIAL_DEBUG_LOGS
+// Sends each log line to the Pi as "ESP LOG ...". The "I (1234) tag: " start
+// is cut off so the line stays short, since operator only takes 127 chars
+static int pi_link_log_vprintf(const char* format, va_list args) {
+  static bool busy = false;
+  if (busy) {
+    return 0;  // A log from inside the send would loop forever
+  }
+  busy = true;
+
+  char text[96];
+  int len = vsnprintf(text, sizeof(text), format, args);
+  char* start = strstr(text, ": ");
+  start = start ? start + 2 : text;
+  // Drop the newline and any '>' since operator reads that as the prompt
+  for (char* c = start; *c; c++) {
+    if (*c == '\n' || *c == '\r') {
+      *c = '\0';
+      break;
+    }
+    if (*c == '>') {
+      *c = ' ';
+    }
+  }
+  if (*start) {
+    char line[104];
+    snprintf(line, sizeof(line), "ESP LOG %s", start);
+    pi_link_send_status(line);
+  }
+
+  busy = false;
+  return len;
+}
+#endif
+
+// The + elbow key drives the elbow motor forward, or backward when reversed
+static esp_err_t pi_link_elbow_start(int8_t delta_elbow) {
+#ifdef CONFIG_DRIVER_ELBOW_REVERSED
+  delta_elbow = -delta_elbow;
+#endif
+  return motorhat_elbow_start(delta_elbow);
+}
+
 // Turns on the axis for each motor we drive. The motor ID is the same as the
 // axis number (see motor_config.h). Every other axis stays off.
 static esp_err_t setup_pi_link_axes(encoder_array_t* encoders,
                                     pi_link_config_t* config) {
   s_pi_link_encoders = encoders;
 
-  for (int r = 0; r < NUM_ROLES; r++) {
+  for (int r = 0; r < MOTORHAT_NUM_AXES; r++) {
+    if (!role_on(r)) {
+      continue;
+    }
     int axis = role_motor_id[r];
     const motor_setting_t* m = &motor_settings[axis];
 
@@ -245,9 +302,15 @@ static esp_err_t setup_pi_link_axes(encoder_array_t* encoders,
       sign = -sign;
     }
 #endif
+#ifdef CONFIG_DRIVER_ELBOW_REVERSED
+    // A reversed elbow is driven backward by the + key
+    if (r == MOTORHAT_AXIS_ELBOW) {
+      sign = -sign;
+    }
+#endif
 
     s_axis_encoder[axis].enabled = true;
-    s_axis_encoder[axis].encoder = axis_encoder_index[r];
+    s_axis_encoder[axis].encoder = r;  // Encoders are indexed by role
     s_axis_encoder[axis].sign = sign;
 
     config->axes[axis].enabled = true;
@@ -270,18 +333,34 @@ typedef struct {
   const char* max_error;  // degrees behind before a fault
 } closed_loop_setting_t;
 
-// Joint 0 is azimuth, joint 1 altitude (both wrist motors when paired)
-static const closed_loop_setting_t closed_loop_settings[2] = {
+// Joint 0 is azimuth, joint 1 altitude (both wrist motors when paired) and
+// joint 2 the elbow
+static const closed_loop_setting_t closed_loop_settings[MOTORHAT_SERVO_JOINTS] = {
     {CONFIG_DRIVER_CL_AZ_SPEED, CONFIG_DRIVER_CL_AZ_KV, CONFIG_DRIVER_CL_AZ_KP,
      CONFIG_DRIVER_CL_AZ_KI, CONFIG_DRIVER_CL_AZ_DEADBAND,
      CONFIG_DRIVER_CL_AZ_MAX_ERROR},
     {CONFIG_DRIVER_CL_ALT_SPEED, CONFIG_DRIVER_CL_ALT_KV,
      CONFIG_DRIVER_CL_ALT_KP, CONFIG_DRIVER_CL_ALT_KI,
      CONFIG_DRIVER_CL_ALT_DEADBAND, CONFIG_DRIVER_CL_ALT_MAX_ERROR},
+#ifdef CONFIG_DRIVER_ELBOW_ENABLE
+    {CONFIG_DRIVER_CL_ELBOW_SPEED, CONFIG_DRIVER_CL_ELBOW_KV,
+     CONFIG_DRIVER_CL_ELBOW_KP, CONFIG_DRIVER_CL_ELBOW_KI,
+     CONFIG_DRIVER_CL_ELBOW_DEADBAND, CONFIG_DRIVER_CL_ELBOW_MAX_ERROR},
+#endif
 };
 
+// The role that leads each joint
+static const int joint_role[MOTORHAT_SERVO_JOINTS] = {
+    MOTORHAT_AXIS_AZIMUTH, MOTORHAT_AXIS_ALTITUDE, MOTORHAT_AXIS_ELBOW};
+
 static int role_joint(int role) {
-  return role == MOTORHAT_AXIS_AZIMUTH ? 0 : 1;
+  if (role == MOTORHAT_AXIS_AZIMUTH) {
+    return 0;
+  }
+  if (role == MOTORHAT_AXIS_ELBOW) {
+    return 2;
+  }
+  return 1;  // Both altitude motors
 }
 
 // Fills config->servo from menuconfig. Degrees become counts with the gearing
@@ -294,9 +373,12 @@ static esp_err_t configure_closed_loop(motorhat_config_t* config) {
   servo->period_ms = CONFIG_DRIVER_CL_PERIOD_MS;
   servo->log_ms = CONFIG_DRIVER_CL_LOG_MS;
 
-  for (int j = 0; j < 2; j++) {
+  for (int j = 0; j < MOTORHAT_SERVO_JOINTS; j++) {
+    int role = joint_role[j];
+    if (!role_on(role)) {
+      continue;  // A disabled elbow has no settings and no motors
+    }
     const closed_loop_setting_t* s = &closed_loop_settings[j];
-    int role = j == 0 ? MOTORHAT_AXIS_AZIMUTH : MOTORHAT_AXIS_ALTITUDE;
     double cpd = 0.0;
     esp_err_t err =
         counts_per_degree(&motor_settings[role_motor_id[role]].limits, &cpd);
@@ -320,7 +402,10 @@ static esp_err_t configure_closed_loop(motorhat_config_t* config) {
     };
   }
 
-  for (int r = 0; r < NUM_ROLES; r++) {
+  for (int r = 0; r < MOTORHAT_NUM_AXES; r++) {
+    if (!role_on(r)) {
+      continue;
+    }
     const motor_setting_t* m = &motor_settings[role_motor_id[r]];
     // + joint motion drives the motor FORWARD (BACKWARD for a reversed
     // altitude B); the sign says which way that moves its count
@@ -398,10 +483,16 @@ static void check_motor_settings(void) {
   bool used[MOTOR_CONFIG_COUNT + 1] = {false};
   bool ok = true;
 
-  for (int r = 0; r < NUM_ROLES; r++) {
+  for (int r = 0; r < MOTORHAT_NUM_AXES; r++) {
+    if (!role_on(r)) {
+      continue;
+    }
     int id = role_motor_id[r];
     used[id] = true;
     for (int other = 0; other < r; other++) {
+      if (!role_on(other)) {
+        continue;
+      }
       const motor_setting_t* a = &motor_settings[role_motor_id[other]];
       const motor_setting_t* b = &motor_settings[id];
       if (role_motor_id[other] == id) {
@@ -438,7 +529,10 @@ static void check_motor_settings(void) {
     ESP_LOGE(TAG, "Motor settings clash, fix them in menuconfig (Motors, Axes)");
     ESP_ERROR_CHECK(ESP_ERR_INVALID_ARG);
   }
-  for (int r = 0; r < NUM_ROLES; r++) {
+  for (int r = 0; r < MOTORHAT_NUM_AXES; r++) {
+    if (!role_on(r)) {
+      continue;
+    }
     int id = role_motor_id[r];
     ESP_LOGI(TAG, "Role %s: %s on HAT %d M%d, encoder GPIO%d/%d",
              role_name[r], motor_settings[id].name, motor_hat_num(id),
@@ -571,7 +665,10 @@ void app_main(void) {
 
   // One encoder per role, from the motor picked for it (index = role)
   encoder_handle_t encoders[MOTORHAT_NUM_AXES];
-  for (int r = 0; r < NUM_ROLES; r++) {
+  for (int r = 0; r < MOTORHAT_NUM_AXES; r++) {
+    if (!role_on(r)) {
+      continue;
+    }
     const motor_setting_t* m = &motor_settings[role_motor_id[r]];
     encoder_config_t encoder_config = {
         .P0_pin = m->encoder_a,
@@ -586,7 +683,7 @@ void app_main(void) {
 
   encoder_array_t encoder_array = {
       .encoders = encoders,
-      .count = NUM_ROLES,
+      .count = MOTORHAT_NUM_AXES,
   };
 
   // Initialize motor controller
@@ -625,8 +722,12 @@ void app_main(void) {
       .max_run_ms = CONFIG_DRIVER_MAX_RUN_MS,
   };
 
-  for (int r = 0; r < NUM_ROLES; r++) {
+  for (int r = 0; r < MOTORHAT_NUM_AXES; r++) {
+    if (!role_on(r)) {
+      continue;
+    }
     const motor_setting_t* m = &motor_settings[role_motor_id[r]];
+    motorhat_config.axis_enabled[r] = true;
     motorhat_config.axis_motor[r] = m->port;
     motorhat_config.axis_speed[r] = PCA9685_PWM_MAX * atof(m->speed);
   }
@@ -635,12 +736,15 @@ void app_main(void) {
   // ER-4pc wrist pitch: altitude drives both motors of the wrist differential.
   // The second motor runs at the altitude motor's speed so the wrist pitches
   // without rolling; its own speed setting is not used.
-  motorhat_config.altitude_b_enabled = true;
   motorhat_config.axis_speed[MOTORHAT_AXIS_ALTITUDE_B] =
       motorhat_config.axis_speed[MOTORHAT_AXIS_ALTITUDE];
 #ifdef CONFIG_DRIVER_ALTITUDE_B_REVERSED
   motorhat_config.altitude_b_reversed = true;
 #endif
+#endif
+
+#ifdef CONFIG_DRIVER_LINK_PI_SERIAL
+  motorhat_config.home_step_cb = pi_link_home_step;
 #endif
 
 #ifdef CONFIG_DRIVER_HOMING_ENABLE
@@ -652,7 +756,10 @@ void app_main(void) {
 #ifdef CONFIG_DRIVER_SOFT_LIMITS_ENABLE
   // Each role takes the gearing, travel and direction of the motor picked
   // for it
-  for (int r = 0; r < NUM_ROLES; r++) {
+  for (int r = 0; r < MOTORHAT_NUM_AXES; r++) {
+    if (!role_on(r)) {
+      continue;
+    }
     const motor_setting_t* m = &motor_settings[role_motor_id[r]];
     ESP_ERROR_CHECK(compute_soft_limit(&m->limits,
                                        CONFIG_DRIVER_SOFT_LIMITS_PERCENT,
@@ -691,6 +798,7 @@ void app_main(void) {
           {
               .polar_pan_start = motorhat_polar_pan_start,
               .polar_pan_stop = motorhat_polar_pan_stop,
+              .elbow_start = pi_link_elbow_start,
               .home = motorhat_home,
               .home_cancel = motorhat_home_cancel,
               .set_speed_percent = motorhat_set_speed_percent,
@@ -702,6 +810,12 @@ void app_main(void) {
 #endif
   ESP_ERROR_CHECK(setup_pi_link_axes(&encoder_array, &pi_link_config));
   ESP_ERROR_CHECK(pi_link_init(&pi_link_config));
+#ifdef CONFIG_DRIVER_PI_SERIAL_DEBUG_LOGS
+  // Only warnings and the closed loop log, or the 9600 baud link floods
+  esp_log_level_set("*", ESP_LOG_WARN);
+  esp_log_level_set("motorhat_servo", ESP_LOG_INFO);
+  esp_log_set_vprintf(pi_link_log_vprintf);
+#endif
 #else
   // Initialize Wi-Fi and socket connection
   driver_wifi_config_t wifi_config = {
@@ -745,6 +859,11 @@ void app_main(void) {
              altitude_b_count);
 #else
     ESP_LOGI(TAG, "Altitude count: %i", altitude_count);
+#endif
+#ifdef CONFIG_DRIVER_ELBOW_ENABLE
+    int elbow_count = 0;
+    encoder_get_raw_count(&encoders[MOTORHAT_AXIS_ELBOW], &elbow_count);
+    ESP_LOGI(TAG, "Elbow count: %i", elbow_count);
 #endif
 
     vTaskDelay(pdMS_TO_TICKS(500));  // Avoid busy loop

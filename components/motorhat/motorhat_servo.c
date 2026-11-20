@@ -12,8 +12,11 @@
 
 #define TAG "motorhat_servo"
 
-enum { JOINT_AZIMUTH = 0, JOINT_ALTITUDE, NUM_JOINTS };
-static const char* const joint_name[NUM_JOINTS] = {"azimuth", "altitude"};
+// Same order as motorhat_servo_config_t.joint. A joint with no motors (the
+// elbow when it is disabled) is skipped everywhere
+enum { JOINT_AZIMUTH = 0, JOINT_ALTITUDE, JOINT_ELBOW, NUM_JOINTS };
+_Static_assert(NUM_JOINTS == MOTORHAT_SERVO_JOINTS, "Joint list must match motorhat.h");
+static const char* const joint_name[NUM_JOINTS] = {"azimuth", "altitude", "elbow"};
 static const char* const state_name[] = {"idle", "active", "fault"};
 static const char* const fault_name[] = {"none", "following error", "stall",
                                          "motors apart"};
@@ -107,7 +110,7 @@ static void control_task(void* args) {
   }
   const float dt = (float)(period * portTICK_PERIOD_MS) / 1000.0f;
   const TickType_t max_run = pdMS_TO_TICKS(s_hat->max_run_ms);
-  servo_state_t last_state[NUM_JOINTS] = {SERVO_IDLE, SERVO_IDLE};
+  servo_state_t last_state[NUM_JOINTS] = {SERVO_IDLE};
 
   TickType_t last_wake = xTaskGetTickCount();
   while (1) {
@@ -205,16 +208,12 @@ static void log_task(void* args) {
       if (joint->n == 0 || joint->state != SERVO_ACTIVE) {
         continue;
       }
-      char line[160];
-      int len = snprintf(line, sizeof(line), "%s ref %.0f v %.0f",
-                         joint_name[j], joint->pos, joint->v_ref);
-      for (int i = 0; i < joint->n && len > 0 && len < (int)sizeof(line); i++) {
-        len += snprintf(line + len, sizeof(line) - (size_t)len,
-                        " | axis %d cnt %" PRId32 " err %.0f duty %.2f",
-                        s_joint_axis[j][i], counts[j][i], joint->m[i].err,
-                        joint->m[i].duty);
+      // One short line per motor so each fits in a Pi status line
+      for (int i = 0; i < joint->n; i++) {
+        ESP_LOGI(TAG, "%s motor %d ref %.0f cnt %" PRId32 " err %.0f duty %.2f",
+                 joint_name[j], i, joint->pos, counts[j][i], joint->m[i].err,
+                 joint->m[i].duty);
       }
-      ESP_LOGI(TAG, "%s", line);
     }
   }
 }
@@ -238,13 +237,22 @@ esp_err_t motorhat_servo_init(motorhat_handle_t* handle,
   int n = 1;
   s_joint_axis[JOINT_ALTITUDE][0] = MOTORHAT_AXIS_ALTITUDE;
   mp[0] = config->motor[MOTORHAT_AXIS_ALTITUDE];
-  if (handle->num_axes > MOTORHAT_AXIS_ALTITUDE_B) {
+  if (handle->axis_enabled[MOTORHAT_AXIS_ALTITUDE_B]) {
     s_joint_axis[JOINT_ALTITUDE][1] = MOTORHAT_AXIS_ALTITUDE_B;
     mp[1] = config->motor[MOTORHAT_AXIS_ALTITUDE_B];
     n = 2;
   }
   servo_joint_init(&s_joint[JOINT_ALTITUDE], &config->joint[JOINT_ALTITUDE], n,
                    mp);
+
+  // Elbow: one motor, or none when it is disabled
+  s_joint_axis[JOINT_ELBOW][0] = MOTORHAT_AXIS_ELBOW;
+  mp[0] = config->motor[MOTORHAT_AXIS_ELBOW];
+  n = 0;
+  if (handle->axis_enabled[MOTORHAT_AXIS_ELBOW]) {
+    n = 1;
+  }
+  servo_joint_init(&s_joint[JOINT_ELBOW], &config->joint[JOINT_ELBOW], n, mp);
 
   s_lock = xSemaphoreCreateMutex();
   if (s_lock == NULL) {
@@ -269,12 +277,13 @@ esp_err_t motorhat_servo_init(motorhat_handle_t* handle,
   return ESP_OK;
 }
 
-void motorhat_servo_start(int8_t delta_azimuth, int8_t delta_altitude) {
+void motorhat_servo_start(int8_t delta_azimuth, int8_t delta_altitude,
+                          int8_t delta_elbow) {
   if (s_lock == NULL) {
     return;
   }
   const int dirs[NUM_JOINTS] = {sign_of(delta_azimuth),
-                                sign_of(delta_altitude)};
+                                sign_of(delta_altitude), sign_of(delta_elbow)};
   bool refused[NUM_JOINTS] = {false};
 
   xSemaphoreTake(s_lock, portMAX_DELAY);

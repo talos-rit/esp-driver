@@ -506,6 +506,15 @@ menu "Talos ESP Driver Configuration"
             did. Operator logs them as "ACL RX: ..." and otherwise ignores
             them. Turn off to send exactly what an ER-V controller sends.
 
+    config DRIVER_PI_SERIAL_DEBUG_LOGS
+        bool "Send closed loop logs and warnings as status lines (debug)"
+        depends on DRIVER_PI_SERIAL_STATUS
+        default n
+        help
+            For tuning on the bench in PuTTY. Sends warnings and the closed
+            loop log (each motor's count, error and duty every Log period) as
+            "ESP LOG ..." lines. Turn off for the demo since it fills the link.
+
     config DRIVER_MAX_RUN_MS
         int "Longest a pan may run without a new start command (ms)"
         range 0 60000
@@ -1084,6 +1093,51 @@ menu "Axes"
         default 5 if DRIVER_ALTITUDE_MOTOR_AXIS5
         default 6 if DRIVER_ALTITUDE_MOTOR_GRIPPER
 
+    config DRIVER_ELBOW_ENABLE
+        bool "Drive the elbow"
+        default y
+        help
+            Lets the Pi jog the elbow with the manual elbow keys (e and 3).
+            Commander sends these for joint jogs and for vertical tracking
+            when track_elbow is on. The elbow is homed with the other axes.
+
+    choice DRIVER_ELBOW_MOTOR_SEL
+        prompt "Elbow motor"
+        depends on DRIVER_ELBOW_ENABLE
+        default DRIVER_ELBOW_MOTOR_AXIS3
+        config DRIVER_ELBOW_MOTOR_AXIS1
+            bool "Axis 1 (base)"
+        config DRIVER_ELBOW_MOTOR_AXIS2
+            bool "Axis 2 (shoulder)"
+        config DRIVER_ELBOW_MOTOR_AXIS3
+            bool "Axis 3 (elbow)"
+        config DRIVER_ELBOW_MOTOR_AXIS4
+            bool "Axis 4 (wrist motor 4)"
+        config DRIVER_ELBOW_MOTOR_AXIS5
+            bool "Axis 5 (wrist motor 5)"
+        config DRIVER_ELBOW_MOTOR_GRIPPER
+            bool "Gripper"
+    endchoice
+
+    config DRIVER_ELBOW_MOTOR_ID
+        int
+        depends on DRIVER_ELBOW_ENABLE
+        default 1 if DRIVER_ELBOW_MOTOR_AXIS1
+        default 2 if DRIVER_ELBOW_MOTOR_AXIS2
+        default 3 if DRIVER_ELBOW_MOTOR_AXIS3
+        default 4 if DRIVER_ELBOW_MOTOR_AXIS4
+        default 5 if DRIVER_ELBOW_MOTOR_AXIS5
+        default 6 if DRIVER_ELBOW_MOTOR_GRIPPER
+
+    config DRIVER_ELBOW_REVERSED
+        bool "Reverse the elbow keys"
+        depends on DRIVER_ELBOW_ENABLE
+        default n
+        help
+            The elbow + key ('3') should raise the camera, since Commander's
+            tracking sends it to move the image up. If it lowers the camera
+            instead, turn this on. Its LISTPV count flips with it.
+
     config DRIVER_ALTITUDE_B_ENABLE
         bool "Drive altitude with a second motor (ER-4pc wrist pitch)"
         default y
@@ -1290,4 +1344,43 @@ menu "Closed Loop Jog"
         string "Altitude following error limit (degrees)"
         depends on DRIVER_CLOSED_LOOP_ENABLE
         default "3.6"
+
+    config DRIVER_CL_ELBOW_SPEED
+        string "Elbow jog speed (degrees/s)"
+        depends on DRIVER_CLOSED_LOOP_ENABLE && DRIVER_ELBOW_ENABLE
+        default "6"
+        help
+            Not tuned yet. Start slow and check on the bench that the elbow
+            keeps up at its Pan speed without a following error fault.
+
+    config DRIVER_CL_ELBOW_KV
+        string "Elbow speed per unit of duty above the deadband (degrees/s)"
+        depends on DRIVER_CLOSED_LOOP_ENABLE && DRIVER_ELBOW_ENABLE
+        default "28"
+        help
+            Not measured yet. Starts from the base value scaled by the elbow's
+            faster gearing (20:72 against 24:120).
+
+    config DRIVER_CL_ELBOW_KP
+        string "Elbow proportional gain (duty per degree)"
+        depends on DRIVER_CLOSED_LOOP_ENABLE && DRIVER_ELBOW_ENABLE
+        default "0.9"
+
+    config DRIVER_CL_ELBOW_KI
+        string "Elbow integral gain (duty per degree*s)"
+        depends on DRIVER_CLOSED_LOOP_ENABLE && DRIVER_ELBOW_ENABLE
+        default "2.7"
+
+    config DRIVER_CL_ELBOW_DEADBAND
+        string "Elbow duty needed to start moving"
+        depends on DRIVER_CLOSED_LOOP_ENABLE && DRIVER_ELBOW_ENABLE
+        default "0.2"
+        help
+            Not measured yet. The elbow lifts the forearm, so it likely needs
+            more than the base.
+
+    config DRIVER_CL_ELBOW_MAX_ERROR
+        string "Elbow following error limit (degrees)"
+        depends on DRIVER_CLOSED_LOOP_ENABLE && DRIVER_ELBOW_ENABLE
+        default "3"
 endmenu
